@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Home Page</title>
+    <style>
+        body { font-family: sans-serif; margin: 0; display: flex; flex-direction: column; min-height: 100vh; color: #333;  background:#f3f3f3; }
+        header { display: flex; justify-content: space-between; padding: 40px 60px; }
+        .logo, .contact { font-size: 32px; font-weight: bold; }
+        .contact { font-weight: normal; color: #444; }
+        
+        .main-grid { 
+            display: grid; 
+            grid-template-columns: 1fr 1fr; 
+            gap: 100px; 
+            max-width: 1000px; 
+            margin: 40px auto; 
+            width: 90%;
+        }
+
+        /* Login Side */
+        .login-box h2 { font-size: 28px; margin-bottom: 20px; }
+        .login-box input { 
+            display: block; width: 100%; padding: 12px; 
+            margin-bottom: 15px; border: 1px solid #333; font-size: 16px; 
+        }
+        .btn-dark { 
+            background: #444; color: white; border: none; padding: 10px 40px; 
+            cursor: pointer; font-size: 16px; margin-bottom: 15px; 
+        }
+        .links { display: block; text-decoration: none; color: #555; margin-bottom: 10px; font-size: 14px; }
+
+        /* Welcome Side */
+        .welcome-box { text-align: center; padding-top: 20px; }
+        .welcome-box h2 { font-size: 28px; font-weight: normal; margin-bottom: 40px; }
+        .line { border-bottom: 1px solid #333; margin: 40px 0; width: 100%; }
+        .instruction { text-align: left; margin-top: 60px; color: #444; line-height: 1.4; }
+
+        footer { text-align: center; padding: 60px; font-size: 32px; color: #444; margin-top: auto; }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo">Logo</div>
+        <div class="contact">Contact Details</div>
+    </header>
+    <main class="main-grid">
+        <section class="login-box">
+            <h2>Log in</h2>
+            <input type="text" placeholder="Username*">
+            <input type="password" placeholder="Password*">
+            <button class="btn-dark">log in</button>
+            <a href="#" class="links">Forget Password</a>
+            <a href="#" class="links">Not yet registered ? Register</a>
+        </section>
+        <section class="welcome-box">
+            <h2>Welcome</h2>
+            <p>to the ____________________ System.</p>
+            <div class="line"></div>
+            <p class="instruction">Please register to submit an application or log in if you're already registered.</p>
+        </section>
+    </main>
+    <footer>Footer Of the Website</footer>
+</body>
+</html>

@@ -1,7 +1,7 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\PreRegisterController;
 
-Route::get('/', function () {
-    return view('welcome');
-});
+Route::post('/send-verification-link',[PreRegisterController::class,'sendVerificationLink']);
+Route::get('/verify-email/{token}',[PreRegisterController::class,'verifyEmail']);
+Route::post('/register',[PreRegisterController::class,'register']);
