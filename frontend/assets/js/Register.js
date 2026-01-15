@@ -66,7 +66,7 @@ form.addEventListener('submit', async (e) => {
         if (res.ok) {
 
             // Redirect immediately to confirmation page with email in query string
-            window.location.href = `Verification_link.html?email=${encodeURIComponent(email)}`;
+            window.location.href = `verification_link.html?email=${encodeURIComponent(email)}`;
             //showMessage(
                // 'Success! Check your email for the verification link. It expires in 15 minutes.',
                // 'success'
@@ -95,8 +95,6 @@ form.addEventListener('submit', async (e) => {
  * For local development, log the API URL being used
  */
 console.log('API Base URL:', API_BASE_URL);
-
-console.log(form);
 
 
 /**

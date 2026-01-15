@@ -40,7 +40,8 @@ class PreRegisterController extends Controller
         if ($record && $record->email_status === 'verified') {
             return response()->json([
                 'message' => 'Email is already verified.'
-            ], 409); // Conflict
+              ], 409); // Conflict
+            //return redirect('http://127.0.0.1:5500/frontend/pages/Account_exists.html');
         }
 
         // Generate a random verification token (32 characters)
