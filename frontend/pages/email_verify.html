@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Register Page</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="csrf-token" content="{{ csrf_token() }}">
+<link rel="stylesheet" href="../assets/css/Register.css">
+<script src="../assets/js/Register.js" defer></script>
+<link rel="stylesheet" href="../assets/css/layout.css">
+
+
+<!-- Google reCAPTCHA script 
+<script src="https://www.google.com/recaptcha/api.js" async defer></script>-->
+</head>
+<body>
+
+<!-- Header -->
+<div id="header"></div>
+
+<!-- Main Registration Box -->
+<div class="container">
+
+    <h2>Register</h2>
+
+    <p class="steps">
+        Please follow these steps to create your account:
+        <br><br>
+        1. Enter your email address and click <b>Register</b><br>
+        2. Confirm your email by clicking on the link sent to you<br>
+        3. Create an account OR add email to existing account
+    </p>
+
+    <form id="registerForm">
+        <input 
+        type="email" 
+        id="email" 
+        placeholder="Enter Email Address*"
+         required>
+
+        <!-- reCAPTCHA 
+        <div class="g-recaptcha" data-sitekey="6LdICEgsAAAAAEz8zztpqw8C57yW2ltX2fHF7xqg"></div>-->
+
+        <button type="submit" id="submitBtn">Register</button>
+        <span class="loading" id="loading"></span>
+        <div id="message" class="message"></div>
+    </form>
+
+    <!-- Get CSRF token from meta tag -->
+    <meta name="csrf-token" content="{{ csrf_token() }}" />
+</div>
+
+<div id="footer"></div>
+<script src="../assets/js/layout.js"></script>
+
+</body>
+</html>

@@ -1,11 +1,4 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<title>Complete Registration</title>
-
-<style>
-    body{
+ body{
         margin:0;
         font-family: Arial, Helvetica, sans-serif;
         min-height:100vh;
@@ -72,42 +65,3 @@
         font-size:24px;
         font-weight:500;
     }
-</style>
-</head>
-
-<body>
-
-<header>
-    <div>Logo</div>
-    <div>Contact Details</div>
-</header>
-
-<div class="container">
-
-    <div class="box">
-        <h2>Complete your registration</h2>
-        <p>Thank you for verifying your email address!</p>
-    </div>
-
-    <div class="box">
-        <p><strong>Choose type of registration</strong></p>
-        <p>Please choose from the following options:</p>
-        <p>
-            1) Create a new account <br>
-            2) Add the verified email address to an existing account
-        </p>
-
-        <div class="btn-group">
-            <button onclick="window.location.href='create_account.html'">Create Account</button>
-            <button onclick="window.location.href='existing_account.html'">Existing Account</button>
-        </div>
-    </div>
-
-</div>
-
-<footer>
-    Footer Of the Website
-</footer>
-
-</body>
-</html>

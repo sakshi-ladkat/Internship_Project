@@ -1,0 +1,64 @@
+html, body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  font-family: Arial, sans-serif;
+  color: #333;
+  background:#fafafa;
+}
+
+header, footer {
+  padding: 20px;
+  font-size: 22px;
+  display: flex;
+  justify-content: space-between;
+}
+
+/* Center content */
+.main {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.box {
+  text-align: center;
+}
+
+h2 {
+  font-size: 30px;
+}
+
+.reason {
+  font-size: 22px;
+  margin-top: 20px;
+}
+
+/* Button */
+button {
+  margin-top: 30px;
+  padding: 12px 35px;
+  font-size: 18px;
+  border: none;
+  border-radius: 30px;
+  background: #444;
+  color: white;
+  cursor: pointer;
+}
+button:hover {
+  background: black;
+}
+footer {
+  padding: 20px;
+  font-size: 22px;
+  display: flex;
+  justify-content: center;   /* Centers horizontally */
+  align-items: center;       /* Centers vertically */
+  text-align: center;
+}
