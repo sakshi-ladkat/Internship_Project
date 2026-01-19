@@ -37,7 +37,7 @@ class PreRegisterController extends Controller
         // Check if the user already exists and is verified
         $record = PreRegistered::where('email', $email)->first();
 
-        if ($record && $record->email_status === 'verified') {
+        if ($record && $record->email_status === 'verified' && $record->user_id !=null) {
             return response()->json([
                 'message' => 'Email is already verified.'
               ], 409); // Conflict
@@ -89,13 +89,13 @@ class PreRegisterController extends Controller
     $token = $request->query('token');
 
     if (!$email || !$token) {
-        return redirect('http://127.0.0.1:5500/frontend/pages/verification_failed.html?reason=invalid');
+        return redirect('http://127.0.0.1:5500/frontend/pages/email_verification_failed.html?reason=invalid');
     }
 
     $record = PreRegistered::where('email', $email)->first();
 
     if (!$record) {
-        return redirect('http://127.0.0.1:5500/frontend/pages/verification_failed.html?reason=not_found');
+        return redirect('http://127.0.0.1:5500/frontend/pages/email_verification_failed.html?reason=not_found');
     }
 
     if ($record->email_status === 'verified') {
@@ -103,20 +103,21 @@ class PreRegisterController extends Controller
     }
 
     if (now()->isAfter($record->verification_expires_at)) {
-        return redirect('http://127.0.0.1:5500/frontend/pages/verification_failed.html?reason=expired');
+        return redirect('http://127.0.0.1:5500/frontend/pages/email_verification_failed.html?reason=expired');
     }
 
     if (!Hash::check($token, $record->verification_code)) {
-        return redirect('http://127.0.0.1:5500/frontend/pages/verification_failed.html?reason=invalid');
+        return redirect('http://127.0.0.1:5500/frontend/pages/email_verification_failed.html?reason=invalid');
     }
 
     $record->update([
         'email_status' => 'verified',
         'verified_at' => now(),
+        'verification_expires_at'=>now()->addHour(),
         'verification_code' => null
     ]);
 
-    return redirect('http://127.0.0.1:5500/frontend/pages/verification_success.html');
+    return redirect('http://127.0.0.1:5500/frontend/pages/email_verification_success.htmlemail=${encodeURIComponent(email)}');
 }
 
     public function resendVerificationLink(Request $request)

@@ -3,6 +3,7 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\PreRegisterController;
+use App\Http\Controllers\UserController;
 
 Route::get('/', function () {
     return view('welcome');
@@ -20,6 +21,9 @@ Route::prefix('pre-register')->group(function () {
     Route::post('resend-link', [PreRegisterController::class, 'resendVerificationLink'])
         ->name('resend-verification-link');
 });
+
+
+Route::post('/create-account', [UserController::class, 'createAccount']);
 
 /**
  * Alternative: If you want to use GET for email verification (more user-friendly for email links)
