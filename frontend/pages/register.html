@@ -1,35 +1,58 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>Complete Registration</title>
-<link rel ="stylesheet" href="../assets/css/register_info.css">
+    <meta charset="UTF-8">
+    <title>Complete Registration</title>
+    <link rel="stylesheet" href="../assets/css/register_info.css">
 </head>
 <body>
-<div id="header"></div>
-<div class="container">
 
-    <div class="box">
-        <h2>Complete your registration</h2>
-        <p>Thank you for verifying your email address!</p>
-    </div>
+    <div id="header"></div>
+    <!-- Placeholder for header content (loaded dynamically via layout.js) -->
 
-    <div class="box">
-        <p><strong>Choose type of registration</strong></p>
-        <p>Please choose from the following options:</p>
-        <p>
-            1) Create a new account <br>
-            2) Add the verified email address to an existing account
-        </p>
+    <div class="container">
 
-        <div class="btn-group">
-            <button onclick="window.location.href='create_account.html'">Create Account</button>
-            <button onclick="window.location.href='existing_account.html'">Existing Account</button>
+        <div class="box">
+
+            <h2>Complete your registration</h2>
+       
+            <p>Thank you for verifying your email address!</p>
+         
         </div>
+
+        <div class="box">
+     
+
+            <p><strong>Choose type of registration</strong></p>
+      
+
+            <p>Please choose from the following options:</p>
+
+            <p>
+                1) Create a new account <br>
+                2) Add the verified email address to an existing account
+            </p>
+
+            <div class="btn-group">
+
+                  <!-- Redirects user to create account page -->
+                <button onclick="window.location.href='create_account.html'">
+                    Create Account
+                </button>
+
+               <!-- Redirects user to existing account page -->
+                <button onclick="window.location.href='existing_account.html'">
+                    Existing Account
+                </button>
+            </div>
+        </div>
+
     </div>
 
-</div>
-<div id="footer"></div>
-<script src="../assets/js/layout.js"></script>
+    <div id="footer"></div>
+    <!-- Placeholder for footer content (loaded dynamically via layout.js) -->
+
+    <script src="../assets/js/layout.js"></script>
+    <!-- JavaScript file to load header and footer dynamically -->
 </body>
 </html>

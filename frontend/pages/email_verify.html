@@ -1,57 +1,81 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>Register Page</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="csrf-token" content="{{ csrf_token() }}">
-<link rel="stylesheet" href="../assets/css/Register.css">
-<script src="../assets/js/Register.js" defer></script>
-<link rel="stylesheet" href="../assets/css/layout.css">
+  <meta charset="UTF-8">
+  <title>Register Page</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
+  <!-- CSRF token (not actually needed for API routes, but harmless) -->
+  <meta name="csrf-token" content="{{ csrf_token() }}">
 
-<!-- Google reCAPTCHA script 
-<script src="https://www.google.com/recaptcha/api.js" async defer></script>-->
+  <!-- Page styling -->
+  <link rel="stylesheet" href="../assets/css/email_verify.css">
+  <link rel="stylesheet" href="../assets/css/layout.css">
+
+  <!-- Global config (API base URL, etc.) -->
+  <script src="../assets/js/config.js"></script>
+
+  <!-- Main JS for this page -->
+  <script src="../assets/js/email_verify.js" defer></script>
+
+  <!-- Google reCAPTCHA script (disabled for now)
+  <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+  -->
 </head>
 <body>
 
-<!-- Header -->
-<div id="header"></div>
+  <!-- Dynamic header loaded via layout.js -->
+  <div id="header"></div>
 
-<!-- Main Registration Box -->
-<div class="container">
+  <!-- Main Registration Box -->
+  <div class="container">
 
     <h2>Register</h2>
 
+    <!-- Step instructions for user -->
     <p class="steps">
-        Please follow these steps to create your account:
-        <br><br>
-        1. Enter your email address and click <b>Register</b><br>
-        2. Confirm your email by clicking on the link sent to you<br>
-        3. Create an account OR add email to existing account
+      Please follow these steps to create your account:
+      <br><br>
+      1. Enter your email address and click <b>Register</b><br>
+      2. Confirm your email by clicking on the link sent to you<br>
+      3. Create an account OR add email to existing account
     </p>
 
+    <!-- Email registration form -->
     <form id="registerForm">
-        <input 
+
+      <!-- Email input -->
+      <input 
         type="email" 
         id="email" 
         placeholder="Enter Email Address*"
-         required>
+        required
+      >
 
-        <!-- reCAPTCHA 
-        <div class="g-recaptcha" data-sitekey="6LdICEgsAAAAAEz8zztpqw8C57yW2ltX2fHF7xqg"></div>-->
+      <!-- reCAPTCHA placeholder (disabled)
+      <div class="g-recaptcha" data-sitekey="YOUR_SITE_KEY"></div>
+      -->
 
-        <button type="submit" id="submitBtn">Register</button>
-        <span class="loading" id="loading"></span>
-        <div id="message" class="message"></div>
+      <!-- Submit button -->
+      <button type="submit" id="submitBtn">Register</button>
+
+      <!-- Loading spinner -->
+      <span class="loading" id="loading"></span>
+
+      <!-- Message area for success / error messages -->
+      <div id="message" class="message"></div>
     </form>
 
-    <!-- Get CSRF token from meta tag -->
+    <!-- Duplicate CSRF meta (safe to remove, already defined above) -->
     <meta name="csrf-token" content="{{ csrf_token() }}" />
-</div>
 
-<div id="footer"></div>
-<script src="../assets/js/layout.js"></script>
+  </div>
+
+  <!-- Dynamic footer -->
+  <div id="footer"></div>
+
+  <!-- Loads header + footer HTML -->
+  <script src="../assets/js/layout.js"></script>
 
 </body>
 </html>

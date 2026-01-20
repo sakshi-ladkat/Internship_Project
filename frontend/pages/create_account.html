@@ -1,40 +1,125 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <title>Create Account</title>
-<link rel = "stylesheet" href="../assets/css/create_account.css">
+
+<!-- Page styling -->
+<link rel="stylesheet" href="../assets/css/create_account.css">
 </head>
 
 <body>
 
+<!-- Dynamic Header -->
 <div id="header"></div>
 
-<!-- Form Section -->
+<!-- Account Creation Form -->
 <div class="container">
 
-    <h2>Create new account</h2>
-    <p>Please enter your data below :</p>
+    <h2>Create New Account</h2>
+    <p>Your email has been verified. Please create your account.</p>
 
-    <div class="label">Name</div>
+    <form id="createAccountForm">
 
-    <div class="name-box">
-        <input type="text" placeholder="First Name">
-        <input type="text" placeholder="Middle Name">
-        <input type="text" placeholder="Last Name">
-    </div>
+        <!-- Email (auto-filled, read-only) -->
+        <div class="label">Email</div>
+        <input
+            type="email"
+            id="email"
+            name="email"
+            readonly
+            required
+        >
 
-    <div class="label">Email</div>
-    <input type="email" value="Verified E-Mail Address is Autofilled">
+        <!-- Username (auto-generated from email) -->
+        <div class="label">Username</div>
+        <input
+            type="text"
+            id="username"
+            name="username"
+            readonly
+        >
 
-    <div class="label">Password</div>
-    <input type="password" placeholder="Choose Password*">
-    <input type="password" placeholder="Retype Password*">
+        <!-- Password -->
+        <div class="label">Password</div>
+        <input
+            type="password"
+            name="password"
+            placeholder="Choose Password"
+            required
+        >
+        <br><br>
+        <!-- Confirm Password -->
+        <input
+            type="password"
+            name="password_confirmation"
+            placeholder="Confirm Password"
+            required
+        >
 
-    <button>Create Account</button>
+        <!-- Submit -->
+        <button type="submit">Create Account</button>
+
+        <!-- Message Area -->
+        <p id="message" class="message"></p>
+    </form>
+
 </div>
 
+<!-- Dynamic Footer -->
 <div id="footer"></div>
+
 <script src="../assets/js/layout.js"></script>
+
+<script>
+/* ----------------------------------------
+   Auto-fill email from URL
+   Example:
+   create_account.html?email=test@gmail.com
+----------------------------------------- */
+const params = new URLSearchParams(window.location.search);
+const email = params.get('email');
+
+if (email) {
+    document.getElementById('email').value = email;
+
+    // Auto-generate username
+    const username = email.split('@')[0];
+    document.getElementById('username').value = username;
+}
+
+/* ----------------------------------------
+   Submit account creation request
+----------------------------------------- */
+document.getElementById('createAccountForm').addEventListener('submit', async function (e) {
+    e.preventDefault();
+
+    const formData = new FormData(this);
+
+    try {
+        const response = await fetch('http://127.0.0.1:8000/create-account', {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/json'
+            },
+            body: formData
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            document.getElementById('message').innerText =
+                'Account created successfully. You may now log in.';
+        } else {
+            document.getElementById('message').innerText =
+                data.message || 'Account creation failed.';
+        }
+    } catch (error) {
+        document.getElementById('message').innerText =
+            'Server error. Please try again.';
+    }
+});
+</script>
+
 </body>
 </html>

@@ -3,17 +3,24 @@
 <head>
 <meta charset="UTF-8">
 <title>Complete Registration</title>
-<link rel ="stylesheet" href="../assets/css/verification_success.css">
+
+<link rel="stylesheet" href="../assets/css/email_verification_success.css">
+<link rel="stylesheet" href="../assets/css/layout.css">
 </head>
+
 <body>
+
 <div id="header"></div>
+
 <div class="container">
 
+    <!-- Success message -->
     <div class="box">
         <h2>Complete your registration</h2>
-        <p>Thank you for verifying your email address !</p>
+        <p>Thank you for verifying your email address!</p>
     </div>
 
+    <!-- Registration choice -->
     <div class="box">
         <p><strong>Choose type of registration</strong></p>
         <p>Please choose from the following options:</p>
@@ -23,8 +30,8 @@
         </p>
 
         <div class="btn-group">
-            <button onclick="window.location.href='create_account.html'">Create Account</button>
-            <button onclick="window.location.href='existing_account.html'">Existing Account</button>
+            <button id="createAccountBtn">Create Account</button>
+            <button id="existingAccountBtn">Existing Account</button>
         </div>
     </div>
 
