@@ -17,7 +17,7 @@ class PreRegisterController extends Controller
     public function sendVerificationLink(Request $request)
     {
         // Rate limiting: max 3 requests per minute per IP
-        $key = 'pre-register:' . $request->ip();
+        $key = 'pre-register:' . $request->ip().':'.$request->email;
         
         if (RateLimiter::tooManyAttempts($key, 3)) {
             return response()->json([
@@ -117,7 +117,7 @@ class PreRegisterController extends Controller
         'verification_code' => null
     ]);
 
-    return redirect('http://127.0.0.1:5500/frontend/pages/email_verification_success.htmlemail=${encodeURIComponent(email)}');
+    return redirect('http://127.0.0.1:5500/frontend/pages/email_verification_success.html');
 }
 
     public function resendVerificationLink(Request $request)
