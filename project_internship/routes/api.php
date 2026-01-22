@@ -23,7 +23,7 @@ Route::prefix('pre-register')->group(function () {
 });
 
 
-Route::post('/create-account', [UserController::class, 'createAccount']);
+Route::post('create-account', [UserController::class, 'createAccount']);
 
 /**
  * Alternative: If you want to use GET for email verification (more user-friendly for email links)

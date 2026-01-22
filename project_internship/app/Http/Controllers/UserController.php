@@ -9,50 +9,110 @@ use Illuminate\Support\Facades\Hash;
 
 class UserController extends Controller
 {
-    public function createAccount(Request $request)
+   public function createAccount(Request $request)
+{
+    $request->validate([
+        'token' => 'required',
+        'password' => 'required|min:8|confirmed',
+    ]);
+
+    $pre = PreRegistered::where('token', $request->token)
+        ->where('email_status', 'verified')
+        ->whereNull('user_id')
+        ->where('verification_expires_at', '>', now())
+        ->first();
+
+    if (!$pre) {
+        return response()->json([
+            'message' => 'Invalid or expired verification link.'
+        ], 403);
+    }
+
+    $email = $pre->email;
+
+    // Generate username safely
+    $baseUsername = strtolower(explode('@', $email)[0]);
+    $username = $baseUsername;
+    $count = 1;
+
+    while (User::where('username', $username)->exists()) {
+        $username = $baseUsername . $count++;
+    }
+
+    $user = User::create([
+        'email' => $email,
+        'username' => $username,
+        'password' => Hash::make($request->password),
+    ]);
+
+    $pre->update([
+        'user_id' => $user->id
+    ]);
+
+    return response()->json([
+        'message' => 'Account created successfully.',
+        'user_id' => $user->id
+    ], 201);
+}
+
+
+
+    public function check(Request $request)
     {
         $request->validate([
-            'email' => 'required|email',
-            'password' => 'required|min:8|confirmed',
+            'username' => [
+                'required',
+                'regex:/^[a-zA-Z][a-zA-Z0-9._]{2,19}$/'
+            ]
         ]);
 
-        // Check verified + within 1 hour window
-        $pre = PreRegistered::where('email', $request->email)
-            ->where('email_status', 'verified')
-            ->whereNull('user_id')
-            ->where('verification_expires_at', '>', now())
-            ->first();
+        $username = strtolower($request->username);
 
-        if (!$pre) {
+        $exists = User::where('username', $username)->exists();
+
+        if (!$exists) {
             return response()->json([
-                'message' => 'Email verification expired or invalid. Please verify again.'
-            ], 403);
+                'available' => true
+            ]);
         }
 
-        // Auto-generate username from email
-        $baseUsername = explode('@', $request->email)[0];
-        $username = $baseUsername;
-        $count = 1;
-
-        while (User::where('username', $username)->exists()) {
-            $username = $baseUsername . $count++;
-        }
-
-        // Create user
-        $user = User::create([
-            'email' => $request->email,
-            'username' => $username,
-            'password' => Hash::make($request->password),
-        ]);
-
-        // Link verified email to user
-        $pre->update([
-            'user_id' => $user->id
-        ]);
-
+        // If taken → generate suggestions
         return response()->json([
-            'message' => 'Account created successfully.',
-            'user_id' => $user->id
-        ], 201);
+            'available' => false,
+            'suggestions' => $this->generateSuggestions($username)
+        ]);
     }
+
+    private function generateSuggestions($username)
+    {
+        $suggestions = [];
+        $base = preg_replace('/[^a-zA-Z0-9._]/', '', $username);
+
+        for ($i = 1; $i <= 5; $i++) {
+            $candidate = $base . rand(10, 99);
+
+            if (!User::where('username', $candidate)->exists()) {
+                $suggestions[] = $candidate;
+            }
+        }
+
+        return $suggestions;
+    }
+
+public function getVerifiedEmail(Request $request)
+{
+    $pre = PreRegistered::where('token', $request->token)
+        ->where('email_status', 'verified')
+        ->firstOrFail();
+
+    $baseUsername = explode('@', $pre->email)[0];
+
+    return response()->json([
+        'email' => $pre->email,
+        'username' => $baseUsername
+    ]);
+}
+
+
+
 }

@@ -40,7 +40,9 @@ class PreRegisterController extends Controller
         if ($record && $record->email_status === 'verified' && $record->user_id !=null) {
             return response()->json([
                 'message' => 'Email is already verified.'
-              ], 409); // Conflict
+              ], 409);
+              
+            // Conflict
             //return redirect('http://127.0.0.1:5500/frontend/pages/Account_exists.html');
         }
 
@@ -123,7 +125,7 @@ class PreRegisterController extends Controller
     public function resendVerificationLink(Request $request)
     {
         // Rate limiting: max 2 resend requests per 10 minutes per IP
-        $key = 'resend-verification:' . $request->ip();
+        $key = 'resend-verification:' . $request->ip().':'.$request->email;
         
         if (RateLimiter::tooManyAttempts($key, 2)) {
             return response()->json([
@@ -159,7 +161,7 @@ class PreRegisterController extends Controller
 
         $record->update([
             'verification_code' => $hashedToken,
-            'verification_expires_at' => Carbon::now()->addMinutes(15),
+            'verification_expires_at' => Carbon::now()->addMinutes(30),
         ]);
 
         $verificationLink = route('verify-email', [
