@@ -38,3 +38,7 @@ async function resendEmail() {
         alert("Network error. Please try again.");
     }
 }
+
+document.getElementById('resendBtn').onclick = function () {
+    resendEmail(userEmail);
+};

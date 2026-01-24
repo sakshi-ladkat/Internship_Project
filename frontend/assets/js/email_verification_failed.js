@@ -28,16 +28,14 @@ switch (reason) {
 
 reasonBox.textContent = message;
 
-resendBtn.addEventListener("click", async () => {
+// Resend email API call
+async function resendEmail() {
     const email = params.get("email");
 
     if (!email) {
-        showMessage("Email not found. Please go back and register again.", "error");
+        alert("Email not found. Please go back and register again.");
         return;
     }
-
-    resendBtn.disabled = true;
-    loadingEl.classList.add("show");
 
     try {
         const response = await fetch("http://127.0.0.1:8000/api/pre-register/resend-link", {
@@ -52,16 +50,17 @@ resendBtn.addEventListener("click", async () => {
         const data = await response.json();
 
         if (response.ok) {
-            showMessage("Verification link resent successfully! Check your email.", "success");
+            alert("Verification link resent successfully! Check your email.");
         } else {
-            showMessage(data.message || "Failed to resend email. Try again later.", "error");
+            alert(data.message || "Failed to resend email. Try again later.");
         }
 
     } catch (error) {
         console.error("Error:", error);
-        showMessage("Network error. Please try again.", "error");
-    } finally {
-        resendBtn.disabled = false;
-        loadingEl.classList.remove("show");
+        alert("Network error. Please try again.");
     }
-});
+}
+
+document.getElementById('resendBtn').onclick = function () {
+    resendEmail(userEmail);
+};

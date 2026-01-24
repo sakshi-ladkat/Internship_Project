@@ -12,12 +12,6 @@ body {
   background:#fafafa;
 }
 
-header, footer {
-  padding: 20px;
-  font-size: 22px;
-  display: flex;
-  justify-content: space-between;
-}
 
 /* Center content */
 .main {
