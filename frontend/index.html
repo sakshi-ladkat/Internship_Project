@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Authentication App - GIT </title>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Main Styles -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css">
+    <link rel="stylesheet" href="./assets/css/spa.css">
+    <link rel="stylesheet" href="./assets/css/dashboard.css">
+</head>
+
+<body>
+    <!-- App Container -->
+    <div id="app">
+        <!-- Header -->
+        <header id="header">
+            <nav class="navbar">
+                <div class="nav-brand">
+                    <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+                    </svg>
+                    <span class="brand-text">AuthApp</span>
+                </div>
+                <div class="nav-links">
+                    <a href="#/" class="nav-link" data-link>Home</a>
+                    <a href="#/login" class="nav-link" data-link>Login</a>
+                    <a href="#/multi-step-register" class="nav-link" data-link>Register</a>
+                </div>
+            </nav>
+        </header>
+
+        <!-- Main Content Area -->
+        <main id="content">
+            <!-- Dynamic content will be injected here -->
+            <div class="loading-screen">
+                <div class="spinner"></div>
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer id="footer">
+            <div class="footer-content">
+                <p>&copy; 2026 AuthApp. All rights reserved.</p>
+                <div class="footer-links">
+                    <a href="#/privacy">Privacy Policy</a>
+                    <a href="#/terms">Terms of Service</a>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container"></div>
+
+    <!-- Scripts -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
+    <script>
+        // Toastr Configuration
+        toastr.options = {
+            "closeButton": true,
+            "progressBar": true,
+            "positionClass": "toast-top-right",
+            "timeOut": "5000"
+        };
+    </script>
+    <script src="./assets/js/config.js"></script>
+
+    <!-- SPA Router and App Logic -->
+    <script src="./assets/js/spa-router.js"></script>
+    <script src="./assets/js/dashboard-enhanced.js"></script>
+    <script src="./assets/js/dashboard-handlers.js"></script>
+    <script src="./assets/js/registration-view.js"></script>
+    <script src="./assets/js/spa-app.js"></script>
+</body>
+
+</html>
