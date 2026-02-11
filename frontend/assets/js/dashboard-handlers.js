@@ -128,11 +128,14 @@ async function loadDashboardSection(section, user) {
                     if (profileLink) profileLink.classList.add('active');
                     return;
                 }
+
+                // Pass profile data to the section renderer
+                content.innerHTML = getRegistrationSection(user, profileData.profile);
             } catch (error) {
                 console.error('Error checking profile status:', error);
+                // Fallback if fetch fails
+                content.innerHTML = getRegistrationSection(user);
             }
-
-            content.innerHTML = getRegistrationSection(user);
             setupRegistrationForm();
             break;
         case 'profile':
@@ -675,16 +678,43 @@ async function addAcademicEntry() {
 
     formData.academic.push(entry);
 
-    // Refresh the academic section UI
-    document.getElementById('dashboardContent').innerHTML = getAcademicInfoForm();
-    populateDropdowns(); // Re-populate country dropdown
+    // Update just the list container
+    const listContainer = document.getElementById('academicEntriesList');
+    if (listContainer) {
+        listContainer.innerHTML = generateAcademicListHTML(formData.academic);
+    }
+
+    // Reset form inputs
+    form.reset();
+    document.getElementById('edu_current').checked = false;
+}
+
+function generateAcademicListHTML(entries) {
+    if (!entries || entries.length === 0) {
+        return '<p style="text-align: center; color: var(--gray-400); padding: 1rem; border: 2px dashed var(--gray-200); border-radius: 0.5rem;">No qualifications added yet.</p>';
+    }
+
+    return entries.map((edu, index) => `
+        <div class="detail-item" style="display: flex; justify-content: space-between; align-items: center; background: var(--gray-50); padding: 1rem; border-radius: 0.5rem; margin-bottom: 0.75rem; border: 1px solid var(--gray-200);">
+            <div>
+                <strong>${edu.degree_title} (${edu.degree_level})</strong>
+                <p style="margin: 0; font-size: 0.875rem; color: var(--gray-600);">${edu.institute_name}</p>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline" style="color: var(--danger);" onclick="removeAcademicEntry(${index})">Remove</button>
+        </div>
+    `).join('');
 }
 
 function removeAcademicEntry(index) {
     formData.academic.splice(index, 1);
-    document.getElementById('dashboardContent').innerHTML = getAcademicInfoForm();
-    populateDropdowns();
+
+    // Update just the list container
+    const listContainer = document.getElementById('academicEntriesList');
+    if (listContainer) {
+        listContainer.innerHTML = generateAcademicListHTML(formData.academic);
+    }
 }
+
 
 function saveStepData(step, form) {
     const formDataObj = new FormData(form);
@@ -879,21 +909,24 @@ async function loadAdminDashboard(user) {
 
     try {
         // Fetch all admin data in parallel
-        const [usersRes, rolesRes, permissionsRes] = await Promise.all([
+        const [usersRes, rolesRes, permissionsRes, masterRes] = await Promise.all([
             fetch(`${CONFIG.API_BASE_URL}/api/admin/users`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
             fetch(`${CONFIG.API_BASE_URL}/api/admin/roles`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
-            fetch(`${CONFIG.API_BASE_URL}/api/admin/permissions`, { headers: { 'Authorization': `Bearer ${authToken}` } })
+            fetch(`${CONFIG.API_BASE_URL}/api/admin/permissions`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
+            fetch(`${CONFIG.API_BASE_URL}/api/profile/master-data`)
         ]);
 
         const usersData = await usersRes.json();
         const rolesData = await rolesRes.json();
         const permissionsData = await permissionsRes.json();
+        const masterData = await masterRes.json();
 
         if (usersRes.ok && rolesRes.ok && permissionsData) {
             content.innerHTML = getAdminSection(user, {
                 users: usersData.users,
                 roles: rolesData.roles,
-                permissions: permissionsData.permissions
+                permissions: permissionsData.permissions,
+                master: masterData
             });
 
             // Initialize Admin UI Helpers

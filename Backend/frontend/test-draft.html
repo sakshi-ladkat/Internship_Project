@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Draft System Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+
+        button:hover {
+            background: #45a049;
+        }
+
+        .result {
+            background: #f9f9f9;
+            padding: 15px;
+            margin: 10px 0;
+            border-left: 4px solid #4CAF50;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+
+        .error {
+            border-left-color: #f44336;
+            background: #ffebee;
+        }
+
+        input,
+        select {
+            width: 100%;
+            padding: 8px;
+            margin: 5px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        label {
+            font-weight: bold;
+            display: block;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>🧪 Registration Draft System Test</h1>
+
+    <div class="test-section">
+        <h2>1. Check Configuration</h2>
+        <button onclick="checkConfig()">Check Config</button>
+        <div id="configResult" class="result" style="display:none;"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>2. Test Save Draft</h2>
+        <label>Institute ID:</label>
+        <input type="text" id="testInstituteId" value="1">
+
+        <label>First Name:</label>
+        <input type="text" id="testFirstName" value="John">
+
+        <label>Last Name:</label>
+        <input type="text" id="testLastName" value="Doe">
+
+        <label>Email:</label>
+        <input type="email" id="testEmail" value="john@example.com">
+
+        <br><br>
+        <button onclick="testSaveDraft()">Save Draft</button>
+        <div id="saveResult" class="result" style="display:none;"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>3. Test Load Draft</h2>
+        <button onclick="testLoadDraft()">Load Draft</button>
+        <div id="loadResult" class="result" style="display:none;"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>4. Check LocalStorage</h2>
+        <button onclick="checkLocalStorage()">Check LocalStorage</button>
+        <div id="localStorageResult" class="result" style="display:none;"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>5. Test Redis Connection</h2>
+        <button onclick="testRedis()">Test Redis</button>
+        <div id="redisResult" class="result" style="display:none;"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>6. Clear All Data</h2>
+        <button onclick="clearAll()" style="background: #f44336;">Clear All</button>
+        <div id="clearResult" class="result" style="display:none;"></div>
+    </div>
+
+    <script src="./assets/js/config.js"></script>
+    <script>
+        // Check configuration
+        function checkConfig() {
+            const result = document.getElementById('configResult');
+            result.style.display = 'block';
+            result.className = 'result';
+            result.textContent = `API Base URL: ${CONFIG.API_BASE_URL}\n`;
+            result.textContent += `Frontend URL: ${CONFIG.FRONTEND_URL || 'Not set'}\n`;
+            result.textContent += `\nConfiguration looks good! ✓`;
+        }
+
+        // Test save draft
+        async function testSaveDraft() {
+            const result = document.getElementById('saveResult');
+            result.style.display = 'block';
+            result.className = 'result';
+            result.textContent = 'Saving draft...\n';
+
+            const draftData = {
+                institute_id: document.getElementById('testInstituteId').value,
+                first_name: document.getElementById('testFirstName').value,
+                last_name: document.getElementById('testLastName').value,
+                email: document.getElementById('testEmail').value,
+                currentStep: 2
+            };
+
+            try {
+                const response = await fetch(`${CONFIG.API_BASE_URL}/api/registration/save-draft`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify(draftData)
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    localStorage.setItem('registrationDraftToken', data.draftToken);
+                    result.textContent += `✓ Draft saved successfully!\n\n`;
+                    result.textContent += `Token: ${data.draftToken}\n`;
+                    result.textContent += `Expires: ${data.expiresAt}\n`;
+                    result.textContent += `\nToken saved to localStorage ✓`;
+                } else {
+                    result.className = 'result error';
+                    result.textContent += `✗ Error: ${data.message}\n`;
+                    result.textContent += JSON.stringify(data, null, 2);
+                }
+            } catch (error) {
+                result.className = 'result error';
+                result.textContent += `✗ Network Error: ${error.message}`;
+            }
+        }
+
+        // Test load draft
+        async function testLoadDraft() {
+            const result = document.getElementById('loadResult');
+            result.style.display = 'block';
+            result.className = 'result';
+
+            const token = localStorage.getItem('registrationDraftToken');
+
+            if (!token) {
+                result.className = 'result error';
+                result.textContent = '✗ No draft token found in localStorage\n';
+                result.textContent += 'Please save a draft first.';
+                return;
+            }
+
+            result.textContent = `Loading draft with token: ${token}\n\n`;
+
+            try {
+                const response = await fetch(`${CONFIG.API_BASE_URL}/api/registration/get-draft`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({ token })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.draft) {
+                    result.textContent += `✓ Draft loaded successfully!\n\n`;
+                    result.textContent += `Draft Data:\n`;
+                    result.textContent += JSON.stringify(data.draft, null, 2);
+                } else {
+                    result.className = 'result error';
+                    result.textContent += `✗ Error (${response.status}): ${data.message}\n`;
+                    result.textContent += JSON.stringify(data, null, 2);
+                }
+            } catch (error) {
+                result.className = 'result error';
+                result.textContent += `✗ Network Error: ${error.message}`;
+            }
+        }
+
+        // Check localStorage
+        function checkLocalStorage() {
+            const result = document.getElementById('localStorageResult');
+            result.style.display = 'block';
+            result.className = 'result';
+
+            const token = localStorage.getItem('registrationDraftToken');
+
+            if (token) {
+                result.textContent = `✓ Draft token found in localStorage:\n\n`;
+                result.textContent += `Token: ${token}\n`;
+                result.textContent += `Length: ${token.length} characters`;
+            } else {
+                result.className = 'result error';
+                result.textContent = '✗ No draft token found in localStorage';
+            }
+        }
+
+        // Test Redis connection
+        async function testRedis() {
+            const result = document.getElementById('redisResult');
+            result.style.display = 'block';
+            result.className = 'result';
+            result.textContent = 'Testing Redis connection...\n';
+
+            try {
+                // Try to save a test draft
+                const response = await fetch(`${CONFIG.API_BASE_URL}/api/registration/save-draft`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        test: 'redis_connection_test',
+                        timestamp: new Date().toISOString()
+                    })
+                });
+
+                if (response.ok) {
+                    result.textContent += `✓ Redis is working!\n`;
+                    result.textContent += `Status: ${response.status}\n`;
+                    result.textContent += `\nRedis cache is properly configured ✓`;
+                } else {
+                    result.className = 'result error';
+                    result.textContent += `✗ Redis connection issue\n`;
+                    result.textContent += `Status: ${response.status}`;
+                }
+            } catch (error) {
+                result.className = 'result error';
+                result.textContent += `✗ Error: ${error.message}`;
+            }
+        }
+
+        // Clear all data
+        async function clearAll() {
+            const result = document.getElementById('clearResult');
+            result.style.display = 'block';
+            result.className = 'result';
+            result.textContent = 'Clearing data...\n';
+
+            const token = localStorage.getItem('registrationDraftToken');
+
+            if (token) {
+                try {
+                    await fetch(`${CONFIG.API_BASE_URL}/api/registration/delete-draft`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ token })
+                    });
+                    result.textContent += '✓ Draft deleted from Redis\n';
+                } catch (error) {
+                    result.textContent += `⚠ Could not delete from Redis: ${error.message}\n`;
+                }
+            }
+
+            localStorage.removeItem('registrationDraftToken');
+            result.textContent += '✓ Token removed from localStorage\n';
+            result.textContent += '\nAll data cleared ✓';
+        }
+    </script>
+</body>
+
+</html>

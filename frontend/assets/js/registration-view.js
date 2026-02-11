@@ -236,41 +236,93 @@ function multiStepRegisterView() {
 }
 
 function multiStepRegisterMount() {
+    console.log('=== multiStepRegisterMount() called ===');
+    console.log('typeof loadInstitutes:', typeof loadInstitutes);
+    console.log('typeof loadContinents:', typeof loadContinents);
+    console.log('typeof checkURLParams:', typeof checkURLParams);
+
     // Check if registration.js is already loaded
     if (typeof loadInstitutes === 'function') {
+        console.log('✓ registration.js functions already available, calling them directly...');
         // Already loaded, just call the functions
-        loadInstitutes();
-        loadContinents();
-        checkURLParams();
+        try {
+            loadInstitutes();
+            loadContinents();
+            checkURLParams();
+            // Initialize auto-save event listeners
+            if (typeof initializeAutoSave === 'function') {
+                initializeAutoSave();
+            }
+            console.log('✓ All registration functions called successfully');
+        } catch (error) {
+            console.error('Error calling registration functions:', error);
+        }
         return;
     }
 
+    console.log('⚠ registration.js functions not found, attempting to load script...');
+
     // Load the registration.js file dynamically
     const existingScript = document.querySelector('script[src="./assets/js/registration.js"]');
+    console.log('Existing registration.js script tag:', existingScript);
+
     if (!existingScript) {
+        console.log('Creating new script tag for registration.js...');
         const script = document.createElement('script');
-        script.src = './assets/js/registration.js';
+        script.src = `./assets/js/registration.js?v=${Date.now()}`; // Cache busting
         script.onload = function () {
+            console.log('✓ registration.js loaded successfully');
+            console.log('typeof loadInstitutes after load:', typeof loadInstitutes);
+
             // Script loaded successfully, now call the functions
             if (typeof loadInstitutes === 'function') {
-                loadInstitutes();
-                loadContinents();
-                checkURLParams();
+                console.log('Calling registration functions after script load...');
+                try {
+                    loadInstitutes();
+                    loadContinents();
+                    checkURLParams();
+                    // Initialize auto-save event listeners
+                    if (typeof initializeAutoSave === 'function') {
+                        initializeAutoSave();
+                    }
+                    console.log('✓ All registration functions called after load');
+                } catch (error) {
+                    console.error('Error calling functions after load:', error);
+                }
             } else {
-                console.error('loadInstitutes function not found after loading registration.js');
+                console.error('❌ loadInstitutes function not found after loading registration.js');
+                console.log('Available window functions:', Object.keys(window).filter(k => k.includes('load')));
             }
         };
-        script.onerror = function () {
-            console.error('Failed to load registration.js');
+        script.onerror = function (error) {
+            console.error('❌ Failed to load registration.js:', error);
         };
         document.head.appendChild(script);
+        console.log('Script tag appended to head');
     } else {
+        console.log('Script tag exists, waiting for functions to be available...');
         // Script tag exists but functions might not be loaded yet
         setTimeout(() => {
+            console.log('Timeout callback - checking for functions...');
+            console.log('typeof loadInstitutes:', typeof loadInstitutes);
+
             if (typeof loadInstitutes === 'function') {
-                loadInstitutes();
-                loadContinents();
-                checkURLParams();
+                console.log('Functions now available, calling them...');
+                try {
+                    loadInstitutes();
+                    loadContinents();
+                    checkURLParams();
+                    // Initialize auto-save event listeners
+                    if (typeof initializeAutoSave === 'function') {
+                        initializeAutoSave();
+                    }
+                    console.log('✓ All functions called after timeout');
+                } catch (error) {
+                    console.error('Error in timeout callback:', error);
+                }
+            } else {
+                console.error('❌ Functions still not available after timeout');
+                console.log('Available window functions:', Object.keys(window).filter(k => k.includes('load')));
             }
         }, 200);
     }

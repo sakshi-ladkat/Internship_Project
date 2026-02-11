@@ -43,7 +43,7 @@ class VerificationMail extends Mailable
             view: 'mail.verification_email',
             with: [
                 'verificationLink' => $this->verificationLink,
-                'expiresInMinutes' => 15
+                'expiresInMinutes' => 1440 // 24 hours = 1440 minutes
             ]
         );
     }

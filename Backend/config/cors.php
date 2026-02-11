@@ -22,8 +22,10 @@ return [
 
     'allowed_origins' => [
         'http://127.0.0.1:5500',      // VS Code Live Server (development)
+        'http://127.0.0.1:5502',      // VS Code Live Server (alternative port)
         'http://127.0.0.1:8000',      // Laravel dev server
         'http://localhost:5500',      // Alternative localhost
+        'http://localhost:5502',      // Alternative localhost (port 5502)
         'http://localhost:3000',      // React dev server
         'http://localhost:8080',      // Vue dev server
         'https://yourdomain.com',     // Production domain
@@ -38,5 +40,5 @@ return [
 
     'max_age' => 0,
 
-    'supports_credentials' => false,
+    'supports_credentials' => true,  // Required for session cookies
 ];

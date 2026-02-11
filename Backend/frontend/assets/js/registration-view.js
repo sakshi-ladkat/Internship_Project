@@ -234,14 +234,30 @@ function multiStepRegisterView() {
         </div>
     `;
 }
+//You call this once when the registration page loads.
+//It ensures everything needed for registration is loaded and initialized.
 
 function multiStepRegisterMount() {
     // Check if registration.js is already loaded
     if (typeof loadInstitutes === 'function') {
+
         // Already loaded, just call the functions
-        loadInstitutes();
-        loadContinents();
-        checkURLParams();
+        loadInstitutes();  // loads institute dropdown from API
+        loadContinents();  // loads continent dropdown
+        checkURLParams();  // prefill step or form using query params
+
+        // Setup auto-save and load draft
+        if (typeof setupAutoSave === 'function') {
+            setupAutoSave();  // setup auto-save
+        }
+
+        // Load draft after a short delay to ensure form is ready
+        setTimeout(() => {
+            if (typeof loadDraft === 'function') {
+                loadDraft();
+            }
+        }, 500);
+
         return;
     }
 
@@ -256,6 +272,18 @@ function multiStepRegisterMount() {
                 loadInstitutes();
                 loadContinents();
                 checkURLParams();
+
+                // Setup auto-save
+                if (typeof setupAutoSave === 'function') {
+                    setupAutoSave();
+                }
+
+                // Load draft after a short delay
+                setTimeout(() => {
+                    if (typeof loadDraft === 'function') {
+                        loadDraft();
+                    }
+                }, 500);
             } else {
                 console.error('loadInstitutes function not found after loading registration.js');
             }
@@ -271,6 +299,18 @@ function multiStepRegisterMount() {
                 loadInstitutes();
                 loadContinents();
                 checkURLParams();
+
+                // Setup auto-save
+                if (typeof setupAutoSave === 'function') {
+                    setupAutoSave();
+                }
+
+                // Load draft
+                setTimeout(() => {
+                    if (typeof loadDraft === 'function') {
+                        loadDraft();
+                    }
+                }, 500);
             }
         }, 200);
     }

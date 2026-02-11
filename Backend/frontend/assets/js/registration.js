@@ -60,10 +60,289 @@ function checkURLParams() {
     }
 }
 
+// Draft Management Functions
+let draftToken = localStorage.getItem('registrationDraftToken');
+let autoSaveTimeout = null;
+
+// Auto-save draft data
+function autoSaveDraft() {
+    clearTimeout(autoSaveTimeout);
+    autoSaveTimeout = setTimeout(async () => {
+        await saveDraft();
+    }, 2000); // Save 2 seconds after user stops typing
+}
+
+// Save draft to Redis
+async function saveDraft() {
+    try {
+        const formData = collectFormData();
+
+        // Don't save if no data entered yet
+        if (!formData.institute_id && !formData.first_name) {
+            return;
+        }
+
+        const payload = {
+            ...formData,
+            draftToken: draftToken || undefined,
+            currentStep: registrationCurrentStep
+        };
+
+        const response = await fetch(`${CONFIG.API_BASE_URL}/api/registration/save-draft`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+            },
+            body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            draftToken = data.draftToken;
+            localStorage.setItem('registrationDraftToken', draftToken);
+            console.log('Draft saved:', data.draftToken);
+
+            // Show subtle save indicator
+            showSaveIndicator();
+        }
+    } catch (error) {
+        console.error('Error saving draft:', error);
+    }
+}
+
+// Load draft from Redis
+async function loadDraft() {
+    const token = localStorage.getItem('registrationDraftToken');
+
+    console.log('loadDraft called, token:', token);
+
+    if (!token) {
+        console.log('No draft token found in localStorage');
+        return;
+    }
+
+    try {
+        console.log('Fetching draft from API...');
+        const response = await fetch(`${CONFIG.API_BASE_URL}/api/registration/get-draft`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+            },
+            body: JSON.stringify({ token })
+        });
+
+        console.log('Draft API response status:', response.status);
+        const data = await response.json();
+        console.log('Draft API response data:', data);
+
+        if (response.ok && data.draft) {
+            console.log('Draft loaded successfully:', data.draft);
+            populateFormFromDraft(data.draft);
+
+            // Show notification
+            if (typeof toastr !== 'undefined') {
+                toastr.info('Your previous progress has been restored');
+            }
+        } else if (response.status === 404 || response.status === 410) {
+            // Draft expired or not found
+            console.warn('Draft not found or expired, clearing token');
+            localStorage.removeItem('registrationDraftToken');
+            draftToken = null;
+        } else {
+            console.warn('Unexpected response:', response.status, data);
+        }
+    } catch (error) {
+        console.error('Error loading draft:', error);
+    }
+}
+
+// Delete draft after successful registration
+async function deleteDraft() {
+    const token = localStorage.getItem('registrationDraftToken');
+
+    if (!token) {
+        return;
+    }
+
+    try {
+        await fetch(`${CONFIG.API_BASE_URL}/api/registration/delete-draft`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ token })
+        });
+
+        localStorage.removeItem('registrationDraftToken');
+        draftToken = null;
+    } catch (error) {
+        console.error('Error deleting draft:', error);
+    }
+}
+
+// Collect all form data
+function collectFormData() {
+    return {
+        institute_id: document.getElementById('institute')?.value || '',
+        first_name: document.getElementById('firstName')?.value || '',
+        middle_name: document.getElementById('middleName')?.value || '',
+        last_name: document.getElementById('lastName')?.value || '',
+        suffix: document.getElementById('suffix')?.value || '',
+        email: document.getElementById('email')?.value || '',
+        address_line1: document.getElementById('addressLine1')?.value || '',
+        address_line2: document.getElementById('addressLine2')?.value || '',
+        address_line3: document.getElementById('addressLine3')?.value || '',
+        city: document.getElementById('city')?.value || '',
+        state: document.getElementById('state')?.value || '',
+        postal_code: document.getElementById('postalCode')?.value || '',
+        continent: document.getElementById('continent')?.value || '',
+        country: document.getElementById('country')?.value || '',
+        office_country_code: document.getElementById('officeCountryCode')?.value || '',
+        office_city_code: document.getElementById('officeCityCode')?.value || '',
+        office_number: document.getElementById('officeNumber')?.value || '',
+        fax_number: document.getElementById('faxNumber')?.value || '',
+    };
+}
+
+
+// Populate form from draft data
+function populateFormFromDraft(draft) {
+    console.log('Populating form from draft:', draft);
+
+    const fieldMap = {
+        institute_id: 'institute',
+        first_name: 'firstName',
+        middle_name: 'middleName',
+        last_name: 'lastName',
+        suffix: 'suffix',
+        email: 'email',
+        address_line1: 'addressLine1',
+        address_line2: 'addressLine2',
+        address_line3: 'addressLine3',
+        city: 'city',
+        state: 'state',
+        postal_code: 'postalCode',
+        continent: 'continent',
+        country: 'country',
+        office_country_code: 'officeCountryCode',
+        office_city_code: 'officeCityCode',
+        office_number: 'officeNumber',
+        fax_number: 'faxNumber',
+    };
+
+    let fieldsPopulated = 0;
+    Object.keys(fieldMap).forEach(key => {
+        const elementId = fieldMap[key];
+        const element = document.getElementById(elementId);
+
+        if (element && draft[key]) {
+            element.value = draft[key];
+            fieldsPopulated++;
+            console.log(`Populated ${elementId} with value:`, draft[key]);
+        } else if (!element) {
+            console.warn(`Element not found: ${elementId}`);
+        }
+    });
+
+    console.log(`Total fields populated: ${fieldsPopulated}`);
+
+    // If continent is set, load countries
+    if (draft.continent) {
+        console.log('Loading countries for continent:', draft.continent);
+        setTimeout(() => {
+            loadCountries();
+        }, 500);
+    }
+
+    // Restore to saved step if available
+    if (draft.currentStep && draft.currentStep > 1) {
+        console.log('Restoring to step:', draft.currentStep);
+        // Don't restore to email verification step or beyond if email not verified
+        if (!verificationToken && draft.currentStep >= 3) {
+            console.log('Email not verified, going to step 2');
+            goToStep(2); // Go to personal info step
+        } else {
+            goToStep(draft.currentStep);
+        }
+    }
+}
+
+// Show save indicator
+function showSaveIndicator() {
+    // Create or update save indicator
+    let indicator = document.getElementById('saveIndicator');
+
+    if (!indicator) {
+        indicator = document.createElement('div');
+        indicator.id = 'saveIndicator';
+        indicator.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #10b981;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 500;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            z-index: 10000;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        `;
+        indicator.textContent = '✓ Draft saved';
+        document.body.appendChild(indicator);
+    }
+
+    // Show indicator
+    indicator.style.opacity = '1';
+
+    // Hide after 2 seconds
+    setTimeout(() => {
+        indicator.style.opacity = '0';
+    }, 2000);
+}
+
+// Setup auto-save listeners
+function setupAutoSave() {
+    console.log('setupAutoSave called');
+
+    // Try both possible IDs
+    let form = document.getElementById('registrationForm');
+    if (!form) {
+        form = document.getElementById('registrationFormWrapper');
+    }
+
+    if (!form) {
+        console.warn('Registration form not found, trying to find by class or tag');
+        // Try to find the form container
+        form = document.querySelector('.form-container');
+    }
+
+    if (form) {
+        console.log('Form found, attaching event listeners');
+        // Add input event listeners to all form fields
+        const inputs = form.querySelectorAll('input, select');
+        console.log(`Found ${inputs.length} input/select elements`);
+
+        inputs.forEach((input, index) => {
+            input.addEventListener('input', autoSaveDraft);
+            input.addEventListener('change', autoSaveDraft);
+        });
+
+        console.log('Auto-save listeners attached successfully');
+    } else {
+        console.error('Could not find registration form element');
+    }
+}
+
 // Load institutes from API
 async function loadInstitutes() {
     try {
-        const response = await fetch(`${CONFIG.API_BASE_URL}/api/registration/institutes`);
+        const response = await fetch(`${CONFIG.API_BASE_URL}/api/institutes`);
         const data = await response.json();
 
         const select = document.getElementById('institute');
@@ -84,7 +363,7 @@ async function loadInstitutes() {
 // Load continents
 async function loadContinents() {
     try {
-        const response = await fetch(`${CONFIG.API_BASE_URL}/api/registration/continents`);
+        const response = await fetch(`${CONFIG.API_BASE_URL}/api/locations/continents`);
         const data = await response.json();
 
         const select = document.getElementById('continent');
@@ -92,8 +371,8 @@ async function loadContinents() {
 
         data.continents.forEach(continent => {
             const option = document.createElement('option');
-            option.value = continent;
-            option.textContent = continent;
+            option.value = continent.name;
+            option.textContent = continent.name;
             select.appendChild(option);
         });
     } catch (error) {
@@ -112,7 +391,7 @@ async function loadCountries() {
     }
 
     try {
-        const response = await fetch(`${CONFIG.API_BASE_URL}/api/registration/countries`, {
+        const response = await fetch(`${CONFIG.API_BASE_URL}/api/locations/countries-by-name`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -125,8 +404,8 @@ async function loadCountries() {
         countrySelect.innerHTML = '<option value="">-- Select Country --</option>';
         data.countries.forEach(country => {
             const option = document.createElement('option');
-            option.value = country;
-            option.textContent = country;
+            option.value = country.name;
+            option.textContent = country.name;
             countrySelect.appendChild(option);
         });
     } catch (error) {
@@ -232,6 +511,9 @@ async function submitRegistration() {
                 summaryEl.innerHTML = summaryHtml;
                 summaryEl.style.display = 'block';
             }
+
+            // Delete draft after successful registration
+            await deleteDraft();
 
             nextStep(); // Go to success step
         } else {
@@ -385,3 +667,10 @@ window.nextStep = nextStep;
 window.prevStep = prevStep;
 window.sendVerificationEmail = sendVerificationEmail;
 window.submitRegistration = submitRegistration;
+window.loadDraft = loadDraft;
+window.saveDraft = saveDraft;
+window.deleteDraft = deleteDraft;
+window.setupAutoSave = setupAutoSave;
+
+// Note: Initialization is handled by multiStepRegisterMount() in registration-view.js
+// when the page is loaded via SPA router. DOMContentLoaded won't work with SPA routing.

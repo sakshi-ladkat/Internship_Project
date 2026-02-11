@@ -126,6 +126,7 @@ class RBACSeeder extends Seeder
             'username' => 'superadmin',
             'email' => 'superadmin@example.com',
             'password' => Hash::make('admin123'),
+            'email_verified_at' => now(), // Mark as active
         ]);
 
         $superAdminRole = Role::where('slug', 'super_admin')->first();
@@ -137,6 +138,7 @@ class RBACSeeder extends Seeder
             'username' => 'testuser',
             'email' => 'testuser@example.com',
             'password' => Hash::make('password123'),
+            'email_verified_at' => now(), // Mark as active
         ]);
         
         $userRole = Role::where('slug', 'user')->first();

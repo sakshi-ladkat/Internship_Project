@@ -6,41 +6,60 @@
 // ========================================
 // VIEW: Home Page
 // ========================================
-function homeView() {
-    return `
-        <div class="card" style="max-width: 800px; margin: 0 auto; text-align: center;">
-            <div class="card-header">
-                <h1 class="card-title" style="font-size: 3rem;">Welcome to AuthApp</h1>
-                <p class="card-subtitle">Secure authentication made simple</p>
-            </div>
-            
-            <div style="margin: 2rem 0;">
-                <svg style="width: 200px; height: 200px; margin: 0 auto; display: block;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-                </svg>
-            </div>
-            
-            <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
-                <a href="#/multi-step-register" class="btn btn-primary" data-link>Get Started</a>
-                <a href="#/login" class="btn btn-outline" data-link>Sign In</a>
-            </div>
-            
-            <div style="margin-top: 3rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem;">
-                <div style="padding: 1.5rem; background: var(--primary-50); border-radius: var(--radius-lg);">
-                    <h3 style="color: var(--primary-600); margin-bottom: 0.5rem;">🔒 Secure</h3>
-                    <p style="font-size: 0.875rem; color: var(--gray-600);">Industry-standard encryption and security</p>
+async function homeView() {
+    try {
+        // Attempt to fetch fresh content
+        // Fetch from new file to ensure fresh content and proper structure
+        const response = await fetch(`./pages/home.html?t=${Date.now()}`);
+
+        if (!response.ok) {
+            throw new Error(`Failed to load content: ${response.status} ${response.statusText}`);
+        }
+
+        const text = await response.text();
+        console.log('Fetched home.html length:', text.length);
+
+        // Debugging Aid: If content is surprisingly short, alert the user.
+        // A full file is ~3000 chars. If it's < 1000, something is definitely wrong.
+        if (text.length < 1500) {
+            alert(`DEBUG WARNING: Fetch seems incomplete! Length: ${text.length} chars.\nCheck console for details.`);
+        } else {
+            console.log('Content fetch seems successful. Length > 1500.');
+        }
+
+        return text;
+    } catch (error) {
+        console.error('Error loading home view:', error);
+
+        // Check if likely a CORS/file protocol error
+        const isFileProtocol = window.location.protocol === 'file:';
+
+        return `
+            <div class="card" style="max-width: 600px; margin: 3rem auto; text-align: center; padding: 2rem;">
+                <h2 class="card-title" style="color: var(--danger);">Unable to Load Home Page</h2>
+                <p style="margin: 1rem 0; color: var(--gray-600);">
+                    The home page content could not be fetched from <code>pages/home.html</code>.
+                </p>
+                
+                <div style="background: #fef2f2; border: 1px solid #fee2e2; border-radius: 8px; padding: 1rem; margin: 1.5rem 0; text-align: left;">
+                    <strong style="color: var(--danger);">Error Details:</strong>
+                    <pre style="margin-top: 0.5rem; font-size: 0.85rem; overflow-x: auto;">${error.message}</pre>
+                    ${isFileProtocol ? `
+                        <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #fee2e2;">
+                            <strong>⚠️ Important:</strong> You seem to be opening this file directly (<code>file://</code>).
+                            <p style="margin-top: 0.5rem;">Browsers block fetching external files in this mode for security.</p>
+                            <p style="margin-top: 0.5rem;">Please use the <code>start-server.sh</code> script or run a local server (e.g., Live Server).</p>
+                        </div>
+                    ` : ''}
                 </div>
-                <div style="padding: 1.5rem; background: var(--success-light); border-radius: var(--radius-lg);">
-                    <h3 style="color: var(--success); margin-bottom: 0.5rem;">⚡ Fast</h3>
-                    <p style="font-size: 0.875rem; color: var(--gray-600);">Lightning-fast email verification</p>
-                </div>
-                <div style="padding: 1.5rem; background: var(--info-light); border-radius: var(--radius-lg);">
-                    <h3 style="color: var(--info); margin-bottom: 0.5rem;">✨ Simple</h3>
-                    <p style="font-size: 0.875rem; color: var(--gray-600);">Easy to use, no complexity</p>
+
+                <div style="display: flex; gap: 1rem; justify-content: center;">
+                    <button onclick="window.location.reload()" class="btn btn-primary">Retry</button>
+                    ${!isFileProtocol ? `<a href="#/login" class="btn btn-outline" data-link>Go to Login</a>` : ''}
                 </div>
             </div>
-        </div>
-    `;
+        `;
+    }
 }
 
 // ========================================
@@ -488,15 +507,19 @@ function loginMount() {
                     'Content-Type': 'application/json',
                     'Accept': 'application/json'
                 },
-                body: JSON.stringify({ email, password })
+                credentials: 'include', // Important for session cookies
+                body: JSON.stringify({
+                    username: email,  // Backend expects 'username' (can be email or username)
+                    password: password
+                })
             });
 
             const data = await response.json();
 
             if (response.ok) {
-                // Store auth token
-                sessionStorage.setItem('authToken', data.token);
+                // Store user data in sessionStorage (not token, since we use sessions)
                 sessionStorage.setItem('user', JSON.stringify(data.user));
+                sessionStorage.setItem('isAuthenticated', 'true');
 
                 showToast('Login successful!', 'success');
 
@@ -513,13 +536,13 @@ function loginMount() {
             } else {
                 messageDiv.innerHTML = `
                     <div class="form-error">
-                        ✗ ${data.message}
+                        ✗ ${data.message || 'Invalid credentials'}
                     </div>
                 `;
-                showToast(data.message, 'error');
+                showToast(data.message || 'Login failed', 'error');
             }
         } catch (error) {
-            console.error('Error:', error);
+            console.error('Login error:', error);
             messageDiv.innerHTML = `
                 <div class="form-error">
                     ✗ Failed to login. Please try again.
@@ -877,6 +900,17 @@ function setupPasswordView() {
                 ✓ Password set successfully! Redirecting to login...
             </div>
 
+            <div id="invalidLinkMessage" style="display: none; text-align: center; margin-bottom: 20px;">
+                <div class="form-error" style="margin-bottom: 15px;">
+                    ✗ The password setup link is invalid or has expired.
+                </div>
+                <p style="margin-bottom: 15px; color: var(--gray-600);">You can request a new setup link below:</p>
+                <div class="form-group">
+                    <input type="email" id="resendEmail" class="form-input" placeholder="Enter your email address">
+                </div>
+                <button type="button" class="btn btn-secondary" onclick="requestNewPasswordLink()">Request New Link</button>
+            </div>
+
             <form id="passwordForm">
                 <div class="form-group">
                     <label class="form-label" for="password">Password</label>
@@ -942,14 +976,93 @@ function setupPasswordView() {
     `;
 }
 
-function setupPasswordMount() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const token = urlParams.get('token');
-    const email = urlParams.get('email');
+async function requestNewPasswordLink() {
+    const emailInput = document.getElementById('resendEmail');
+    const email = emailInput.value.trim();
 
-    if (!token || !email) {
-        showToast('Invalid password setup link. Please request a new one.', 'error');
-        window.location.hash = '/login';
+    if (!email) {
+        showToast('Please enter your email address', 'error');
+        return;
+    }
+
+    try {
+        // Use the resend verification endpoint
+        const response = await fetch(`${CONFIG.API_BASE_URL}/api/registration/resend-verification`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+            },
+            body: JSON.stringify({ email })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            showToast('New setup link sent! Please check your email.', 'success');
+            // Allow user to close or redirect
+            setTimeout(() => {
+                window.location.hash = '/login';
+            }, 3000);
+        } else {
+            // Fallback if not found or other error
+            const retryResponse = await fetch(`${CONFIG.API_BASE_URL}/api/registration/send-verification`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                },
+                body: JSON.stringify({ email })
+            });
+
+            if (retryResponse.ok) {
+                showToast('New setup link sent! Please check your email.', 'success');
+                setTimeout(() => {
+                    window.location.hash = '/login';
+                }, 3000);
+            } else {
+                showToast(data.message || 'Failed to send new link.', 'error');
+            }
+        }
+    } catch (error) {
+        console.error('Error requesting new link:', error);
+        showToast('Network error. Please try again.', 'error');
+    }
+}
+
+function setupPasswordMount() {
+    let urlParams = new URLSearchParams(window.location.search);
+    let token = urlParams.get('token');
+    let email = urlParams.get('email');
+    const error = urlParams.get('error');
+
+    // Also check hash params if not found in search
+    if ((!token || !email) && window.location.hash.includes('?')) {
+        try {
+            const hashQuery = window.location.hash.split('?')[1];
+            const hashParams = new URLSearchParams(hashQuery);
+            if (!token) token = hashParams.get('token');
+            if (!email) email = hashParams.get('email');
+        } catch (e) {
+            console.error('Error parsing hash params:', e);
+        }
+    }
+
+    // Check for error param in hash too
+    let hasError = error;
+    if (!hasError && window.location.hash.includes('?')) {
+        const hashQuery = window.location.hash.split('?')[1];
+        const hashParams = new URLSearchParams(hashQuery);
+        if (hashParams.get('error')) hasError = hashParams.get('error');
+    }
+
+    // If initial params are missing OR there is an explicit error, show the invalid link UI
+    if (!token || !email || hasError) {
+        document.getElementById('passwordForm').style.display = 'none';
+        document.getElementById('invalidLinkMessage').style.display = 'block';
+        if (email) {
+            document.getElementById('resendEmail').value = decodeURIComponent(email);
+        }
         return;
     }
 
@@ -1026,6 +1139,19 @@ function setupPasswordMount() {
                 }, 2000);
             } else {
                 showToast(data.message || 'Failed to set password. Please try again.', 'error');
+
+                // If the error indicates token issues, show the resend link option
+                if (data.message && (
+                    data.message.toLowerCase().includes('expire') ||
+                    data.message.toLowerCase().includes('invalid') ||
+                    data.message.toLowerCase().includes('token')
+                )) {
+                    document.getElementById('passwordForm').style.display = 'none';
+                    document.getElementById('invalidLinkMessage').style.display = 'block';
+                    if (email) {
+                        document.getElementById('resendEmail').value = decodeURIComponent(email);
+                    }
+                }
             }
         } catch (error) {
             console.error('Error setting password:', error);

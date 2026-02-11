@@ -154,7 +154,7 @@ function getOverviewSection(user, completion = 0, profileData = null) {
     `;
 }
 
-function getRegistrationSection(user) {
+function getRegistrationSection(user, profileData = null) {
     return `
         <div class="dashboard-header">
             <h1>Registration Form</h1>
@@ -188,7 +188,7 @@ function getRegistrationSection(user) {
             </div>
 
             <!-- Form Sections -->
-            ${getPersonalInfoForm(user)}
+            ${getPersonalInfoForm(user, profileData)}
             ${getAcademicInfoForm()}
             ${getAffiliationForm()}
             ${getProjectDetailsForm()}
@@ -196,24 +196,40 @@ function getRegistrationSection(user) {
     `;
 }
 
-function getPersonalInfoForm(user) {
+function getPersonalInfoForm(user, profileData = null) {
+    const p = profileData || {};
+
+    // Helper to lock fields if value exists and is not just whitespace
+    const hasValue = (val) => val && String(val).trim().length > 0 && val !== 'null';
+
+    const lockAttr = (val) => hasValue(val) ? 'readonly style="background-color: var(--gray-100); cursor: not-allowed;"' : '';
+    const lockSelectStyle = (val) => hasValue(val) ? 'style="background-color: var(--gray-100); pointer-events: none;" tabindex="-1"' : '';
+
     return `
         <div class="form-section active" id="step1">
-            <h3 style="margin-bottom: 1.5rem;">Personal Information</h3>
+            <h3 style="margin-bottom: 1rem;">Personal Information</h3>
+            <div class="alert alert-info" style="margin-bottom: 1.5rem; display: flex; gap: 0.75rem; align-items: start;">
+                 <svg style="width: 20px; height: 20px; flex-shrink: 0;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                 <div>
+                    <strong>Note:</strong> Some fields are locked because you already provided this information during registration. 
+                    Please fill in the remaining details to complete your profile.
+                 </div>
+            </div>
+            
             <form id="personalInfoForm">
                 <!-- Name -->
                 <div class="form-row-3">
                     <div class="form-group">
                         <label class="form-label">First Name *</label>
-                        <input type="text" class="form-input" name="first_name" required>
+                        <input type="text" class="form-input" name="first_name" value="${p.first_name || ''}" required ${lockAttr(p.first_name)}>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Middle Name</label>
-                        <input type="text" class="form-input" name="middle_name">
+                        <input type="text" class="form-input" name="middle_name" value="${p.middle_name || ''}" ${lockAttr(p.middle_name)}>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Last Name *</label>
-                        <input type="text" class="form-input" name="last_name" required>
+                        <input type="text" class="form-input" name="last_name" value="${p.last_name || ''}" required ${lockAttr(p.last_name)}>
                     </div>
                 </div>
 
@@ -221,15 +237,15 @@ function getPersonalInfoForm(user) {
                 <div class="form-row">
                     <div class="form-group">
                         <label class="form-label">Date of Birth *</label>
-                        <input type="date" class="form-input" name="date_of_birth" required>
+                        <input type="date" class="form-input" name="date_of_birth" value="${p.date_of_birth || ''}" required ${lockAttr(p.date_of_birth)}>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Gender *</label>
-                        <select class="form-input" name="gender" required>
+                        <select class="form-input" name="gender" required ${lockSelectStyle(p.gender)}>
                             <option value="">Select Gender</option>
-                            <option value="Male">Male</option>
-                            <option value="Female">Female</option>
-                            <option value="Prefer not to say">Prefer not to say</option>
+                            <option value="Male" ${p.gender === 'Male' ? 'selected' : ''}>Male</option>
+                            <option value="Female" ${p.gender === 'Female' ? 'selected' : ''}>Female</option>
+                            <option value="Prefer not to say" ${p.gender === 'Prefer not to say' ? 'selected' : ''}>Prefer not to say</option>
                         </select>
                     </div>
                 </div>
@@ -238,17 +254,18 @@ function getPersonalInfoForm(user) {
                 <div class="form-row">
                     <div class="form-group">
                         <label class="form-label">Country Code *</label>
-                        <select class="form-input" name="country_code" required>
-                            <option value="+1">+1 (USA/Canada)</option>
-                            <option value="+44">+44 (UK)</option>
-                            <option value="+91">+91 (India)</option>
-                            <option value="+86">+86 (China)</option>
-                            <option value="+81">+81 (Japan)</option>
+                        <select class="form-input" name="country_code" required ${lockSelectStyle(p.country_code)}>
+                            <option value="+1" ${p.country_code === '+1' ? 'selected' : ''}>+1 (USA/Canada)</option>
+                            <option value="+44" ${p.country_code === '+44' ? 'selected' : ''}>+44 (UK)</option>
+                            <option value="+91" ${p.country_code === '+91' ? 'selected' : ''}>+91 (India)</option>
+                            <option value="+86" ${p.country_code === '+86' ? 'selected' : ''}>+86 (China)</option>
+                            <option value="+81" ${p.country_code === '+81' ? 'selected' : ''}>+81 (Japan)</option>
+                            <option value="${p.country_code}" ${!['+1', '+44', '+91', '+86', '+81'].includes(p.country_code) && p.country_code ? 'selected' : ''}>${p.country_code}</option>
                         </select>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Mobile Number *</label>
-                        <input type="tel" class="form-input" name="mobile_number" required>
+                        <input type="tel" class="form-input" name="mobile_number" value="${p.mobile_number || ''}" required ${lockAttr(p.mobile_number)}>
                     </div>
                 </div>
 
@@ -261,47 +278,48 @@ function getPersonalInfoForm(user) {
                     </div>
                     <div class="form-group">
                         <label class="form-label">Alternate Email</label>
-                        <input type="email" class="form-input" name="alternate_email" placeholder="Optional backup email">
+                        <input type="email" class="form-input" name="alternate_email" value="${p.alternate_email || ''}" placeholder="Optional backup email" ${lockAttr(p.alternate_email)}>
                     </div>
                 </div>
 
                 <!-- Address -->
                 <div class="form-group">
                     <label class="form-label">Address Line 1 *</label>
-                    <input type="text" class="form-input" name="address_line1" required>
+                    <input type="text" class="form-input" name="address_line1" value="${p.address_line1 || ''}" required ${lockAttr(p.address_line1)}>
                 </div>
                 <div class="form-row">
                     <div class="form-group">
                         <label class="form-label">Address Line 2</label>
-                        <input type="text" class="form-input" name="address_line2">
+                        <input type="text" class="form-input" name="address_line2" value="${p.address_line2 || ''}" ${lockAttr(p.address_line2)}>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Address Line 3</label>
-                        <input type="text" class="form-input" name="address_line3">
+                        <input type="text" class="form-input" name="address_line3" value="${p.address_line3 || ''}" ${lockAttr(p.address_line3)}>
                     </div>
                 </div>
 
                 <div class="form-row">
                     <div class="form-group">
                         <label class="form-label">City/Town *</label>
-                        <input type="text" class="form-input" name="city" required>
+                        <input type="text" class="form-input" name="city" value="${p.city || ''}" required ${lockAttr(p.city)}>
                     </div>
                     <div class="form-group">
                         <label class="form-label">State/Province *</label>
-                        <input type="text" class="form-input" name="state" required>
+                        <input type="text" class="form-input" name="state" value="${p.state || ''}" required ${lockAttr(p.state)}>
                     </div>
                 </div>
 
                 <div class="form-row">
                     <div class="form-group">
                         <label class="form-label">Country *</label>
-                        <select class="form-input" name="country" id="personalCountry" required>
+                        <select class="form-input" name="country" id="personalCountry" required ${lockSelectStyle(p.country)}>
                             <option value="">Select Country</option>
+                            <option value="${p.country}" ${p.country ? 'selected' : ''}>${p.country}</option>
                         </select>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Postal/ZIP Code *</label>
-                        <input type="text" class="form-input" name="postal_code" required>
+                        <input type="text" class="form-input" name="postal_code" value="${p.postal_code || ''}" required ${lockAttr(p.postal_code)}>
                     </div>
                 </div>
 
@@ -309,20 +327,20 @@ function getPersonalInfoForm(user) {
                 <div class="form-row">
                     <div class="form-group">
                         <label class="form-label">Nationality *</label>
-                        <input type="text" class="form-input" name="nationality" required>
+                        <input type="text" class="form-input" name="nationality" value="${p.nationality || ''}" required ${lockAttr(p.nationality)}>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Country of Citizenship *</label>
-                        <input type="text" class="form-input" name="country_of_citizenship" required>
+                        <input type="text" class="form-input" name="country_of_citizenship" value="${p.country_of_citizenship || ''}" required ${lockAttr(p.country_of_citizenship)}>
                     </div>
                 </div>
 
                 <div class="form-group">
                     <label class="form-label">Type of Student *</label>
-                    <select class="form-input" name="student_type" required>
+                    <select class="form-input" name="student_type" required ${lockSelectStyle(p.student_type)}>
                         <option value="">Select Type</option>
-                        <option value="Internal Student">Internal Student</option>
-                        <option value="External Student">External Student</option>
+                        <option value="Internal Student" ${p.student_type === 'Internal Student' ? 'selected' : ''}>Internal Student</option>
+                        <option value="External Student" ${p.student_type === 'External Student' ? 'selected' : ''}>External Student</option>
                     </select>
                 </div>
 
@@ -734,8 +752,12 @@ function getProfileSection(user, profileData) {
 }
 
 function getAdminSection(user, data) {
-    const { users, roles, permissions } = data;
-    const isSuperAdmin = user.roles && user.roles.includes('super_admin');
+    const { users = [], roles = [], permissions = {}, master = {} } = data || {};
+    const isSuperAdmin = user.roles && user.roles.some(r => r.slug === 'super_admin');
+
+    const institutes = master.institutes || [];
+    const departments = master.departments || [];
+    const subDepartments = master.sub_departments || [];
 
     return `
         <div class="dashboard-header">
@@ -800,7 +822,9 @@ function getAdminSection(user, data) {
                                         </span>
                                     </td>
                                     <td style="padding: 1rem;">
-                                        <button class="btn btn-sm btn-outline" onclick="openRoleAssignmentModal(${u.id}, '${u.username}', ${JSON.stringify(u.roles).replace(/"/g, '&quot;')})">Manage</button>
+                                        ${u.roles.some(r => r.slug === 'super_admin')
+            ? '<span class="badge badge-secondary" style="background: var(--gray-200); color: var(--gray-600); cursor: not-allowed;">System Protected</span>'
+            : `<button class="btn btn-sm btn-outline" onclick="openRoleAssignmentModal(${u.id}, '${u.username}', ${JSON.stringify(u.roles).replace(/"/g, '&quot;')})">Manage</button>`}
                                     </td>
                                 </tr>
                             `).join('') : '<tr><td colspan="5" style="text-align: center; padding: 2rem;">No users found.</td></tr>'}
@@ -924,7 +948,7 @@ function getAdminSection(user, data) {
                 <p>Assign roles to <strong id="assignTargetUser">User</strong></p>
                 <form id="roleAssignForm">
                     <input type="hidden" id="assignUserId">
-                    <div id="modalRoleList" style="margin-bottom: 1rem; display: flex; flex-direction: column; gap: 0.5rem; padding: 1rem; border: 1px solid var(--gray-200); border-radius: 0.5rem; background: var(--gray-50); max-height: 200px; overflow-y: auto;">
+                    <div id="modalRoleList" style="margin-bottom: 1rem; display: flex; flex-direction: column; gap: 0.5rem; padding: 1rem; border: 1px solid var(--gray-200); border-radius: 0.5rem; background: var(--gray-50); max-height: 400px; overflow-y: auto;">
                         ${roles ? roles.map(r => `
                             <div class="role-checkbox-item">
                                 <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
@@ -936,20 +960,29 @@ function getAdminSection(user, data) {
                                 <div id="scope_container_${r.id}" class="role-scope-fields" style="display: none; margin-top: 0.5rem; padding-left: 1.5rem;">
                                     ${r.slug === 'department_lead' ? `
                                         <div class="form-group">
-                                            <label style="font-size: 0.75rem;">Department Name</label>
-                                            <input type="text" name="scope_dept_${r.id}" class="form-input" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;" placeholder="e.g. IT">
+                                            <label style="font-size: 0.75rem;">Department</label>
+                                            <select name="scope_dept_${r.id}" class="form-input" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">
+                                                <option value="">Select Department</option>
+                                                ${departments.map(d => `<option value="${d.id}">${d.name}</option>`).join('')}
+                                            </select>
                                         </div>
                                     ` : ''}
                                     ${r.slug === 'sub_department_lead' ? `
                                         <div class="form-group">
-                                            <label style="font-size: 0.75rem;">Sub-Department Name</label>
-                                            <input type="text" name="scope_subdept_${r.id}" class="form-input" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;" placeholder="e.g. Networking">
+                                            <label style="font-size: 0.75rem;">Sub-Department</label>
+                                            <select name="scope_subdept_${r.id}" class="form-input" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">
+                                                <option value="">Select Sub-Department</option>
+                                                ${subDepartments.map(sd => `<option value="${sd.id}">${sd.name}</option>`).join('')}
+                                            </select>
                                         </div>
                                     ` : ''}
-                                    ${r.slug === 'li_coordinator' ? `
+                                    ${['li_coordinator', 'pet_lead'].includes(r.slug) ? `
                                         <div class="form-group">
-                                            <label style="font-size: 0.75rem;">Institute Name</label>
-                                            <input type="text" name="scope_inst_${r.id}" class="form-input" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;" placeholder="e.g. IITB">
+                                            <label style="font-size: 0.75rem;">Institute</label>
+                                            <select name="scope_inst_${r.id}" class="form-input" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">
+                                                <option value="">Select Institute</option>
+                                                ${institutes.map(i => `<option value="${i.id}">${i.name}</option>`).join('')}
+                                            </select>
                                         </div>
                                     ` : ''}
                                 </div>

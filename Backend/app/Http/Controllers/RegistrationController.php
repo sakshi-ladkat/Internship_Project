@@ -2,11 +2,12 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Institute;
+use App\Http\Requests\RegisterRequest;
 use App\Models\RegistrationData;
 use App\Models\User;
 use App\Mail\SetPasswordMail;
 use Illuminate\Http\Request;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Hash;
@@ -16,24 +17,21 @@ use Carbon\Carbon;
 class RegistrationController extends Controller
 {
     /**
-     * Get all active institutes
-     */
-    public function getInstitutes()
-    {
-        $institutes = Institute::where('is_active', true)
-            ->orderBy('name')
-            ->get(['id', 'name', 'country', 'city']);
-
-        return response()->json([
-            'institutes' => $institutes
-        ]);
-    }
-
-    /**
      * Send email verification link
      */
-    public function sendVerificationLink(Request $request)
+    public function sendVerificationLink(Request $request): JsonResponse
     {
+        // Rate limiting: max 3 requests per minute per IP+email
+        $key = 'verification:' . $request->ip() . ':' . $request->input('email');
+        
+        if (\Illuminate\Support\Facades\RateLimiter::tooManyAttempts($key, 3)) {
+            return response()->json([
+                'message' => 'Too many verification requests. Please try again later.'
+            ], 429);
+        }
+
+        \Illuminate\Support\Facades\RateLimiter::hit($key, 60); // 60 seconds decay
+
         $request->validate([
             'email' => 'required|email|max:255'
         ]);
@@ -58,19 +56,19 @@ class RegistrationController extends Controller
             ], 409);
         }
 
-        // Generate verification token
+        // Generate verification token (64 characters for enhanced security)
         $token = Str::random(64);
         $hashedToken = Hash::make($token);
 
-        // Store in cache (15 minutes)
+        // Store in cache (24 hours)
         $cacheKey = 'email_verification:' . $email;
         Cache::put($cacheKey, [
             'email' => $email,
             'token' => $hashedToken,
             'status' => 'unverified',
             'created_at' => now()->toDateTimeString(),
-            'expires_at' => now()->addMinutes(15)->toDateTimeString()
-        ], now()->addMinutes(15));
+            'expires_at' => now()->addHours(24)->toDateTimeString()
+        ], now()->addHours(24));
 
         // Generate verification link
         $verificationLink = url('/api/registration/verify-email?token=' . $token . '&email=' . urlencode($email));
@@ -81,17 +79,214 @@ class RegistrationController extends Controller
         try {
             Mail::to($email)->send(new \App\Mail\VerificationMail($verificationLink));
             
+            // Log successful verification email send for security audit
+            \Log::info('Verification email sent', [
+                'email' => $email,
+                'ip' => $request->ip(),
+                'timestamp' => now()->toDateTimeString()
+            ]);
+            
             return response()->json([
                 'message' => 'Verification link sent successfully! Please check your email.',
                 'email' => $email
             ]);
         } catch (\Exception $e) {
-            \Log::error('Verification email failed: ' . $e->getMessage());
+            \Log::error('Verification email failed: ' . $e->getMessage(), [
+                'email' => $email,
+                'ip' => $request->ip()
+            ]);
             
             return response()->json([
                 'message' => 'Failed to send verification email. Please try again.'
             ], 500);
         }
+    }
+
+    /**
+     * Resend verification link (Smart dispatch)
+     */
+    public function resendVerificationLink(Request $request): JsonResponse
+    {
+        // Rate limiting: max 2 resend requests per 10 minutes per IP+email
+        $key = 'resend-verification:' . $request->ip() . ':' . $request->input('email');
+        
+        if (\Illuminate\Support\Facades\RateLimiter::tooManyAttempts($key, 2)) {
+            return response()->json([
+                'message' => 'Too many resend requests. Please try again in 10 minutes.'
+            ], 429);
+        }
+
+        \Illuminate\Support\Facades\RateLimiter::hit($key, 600); // 600 seconds (10 minutes) decay
+
+        $request->validate([
+            'email' => 'required|email|max:255'
+        ]);
+
+        $email = $request->email;
+
+        // Check if user account already exists
+        if (User::where('email', $email)->exists()) {
+            // Don't reveal that account exists for security
+            return response()->json([
+                'message' => 'If this email is registered, a verification link will be sent.'
+            ], 200);
+        }
+
+        // Check for pending registration data
+        $registration = RegistrationData::where('email', $email)->first();
+
+        if ($registration && $registration->status === 'email_verified') {
+            // Resend Password Setup Link
+            return $this->resendPasswordSetupLink($email, $registration);
+        } elseif ($registration && $registration->status === 'completed') {
+             return response()->json([
+                'message' => 'Registration completed. Please login.'
+            ], 409);
+        }
+
+        // Resend Initial Email Verification Link
+        return $this->resendEmailVerificationLink($email);
+    }
+
+    /**
+     * Save registration draft data
+     * Stores partial registration data in Redis cache for 30 minutes
+     */
+    public function saveDraft(Request $request): JsonResponse
+    {
+        // Validate that we have at least some data to save
+        $request->validate([
+            'email' => 'nullable|email|max:255',
+            'token' => 'nullable|string',
+        ]);
+
+        // Generate a unique draft token if not provided
+        $draftToken = $request->input('draftToken') ?? Str::uuid()->toString();
+        
+        // Prepare draft data (exclude sensitive fields)
+        $draftData = $request->except(['password', 'password_confirmation', 'draftToken']);
+        
+        // Add metadata
+        $draftData['saved_at'] = now()->toDateTimeString();
+        $draftData['expires_at'] = now()->addMinutes(30)->toDateTimeString();
+        
+        // Store in Redis cache with 30-minute expiration
+        $cacheKey = 'register_draft_' . $draftToken;
+        Cache::put($cacheKey, $draftData, now()->addMinutes(30));
+        
+        // Log draft save for debugging
+        \Log::info('Registration draft saved', [
+            'draft_token' => $draftToken,
+            'has_email' => !empty($draftData['email']),
+            'ip' => $request->ip(),
+            'timestamp' => now()->toDateTimeString()
+        ]);
+
+        return response()->json([
+            'message' => 'Draft saved successfully',
+            'draftToken' => $draftToken,
+            'expiresAt' => $draftData['expires_at']
+        ]);
+    }
+
+    /**
+     * Retrieve registration draft data
+     * Fetches saved draft data from Redis cache
+     */
+    public function getDraft(Request $request): JsonResponse
+    {
+        $request->validate([
+            'token' => 'required|string'
+        ]);
+
+        $token = $request->input('token');
+        $cacheKey = 'register_draft_' . $token;
+        
+        // Retrieve draft from cache
+        $draftData = Cache::get($cacheKey);
+
+        if (!$draftData) {
+            return response()->json([
+                'message' => 'Draft not found or has expired',
+                'draft' => null
+            ], 404);
+        }
+
+        // Check if draft has expired
+        if (isset($draftData['expires_at']) && now()->isAfter(Carbon::parse($draftData['expires_at']))) {
+            Cache::forget($cacheKey);
+            return response()->json([
+                'message' => 'Draft has expired',
+                'draft' => null
+            ], 410);
+        }
+
+        // Log draft retrieval
+        \Log::info('Registration draft retrieved', [
+            'draft_token' => $token,
+            'has_email' => !empty($draftData['email']),
+            'ip' => $request->ip()
+        ]);
+
+        return response()->json([
+            'message' => 'Draft retrieved successfully',
+            'draft' => $draftData,
+            'expiresAt' => $draftData['expires_at'] ?? null
+        ]);
+    }
+
+    /**
+     * Delete registration draft data
+     * Removes draft from Redis cache
+     */
+    public function deleteDraft(Request $request): JsonResponse
+    {
+        $request->validate([
+            'token' => 'required|string'
+        ]);
+
+        $token = $request->input('token');
+        $cacheKey = 'register_draft_' . $token;
+        
+        // Delete from cache
+        $deleted = Cache::forget($cacheKey);
+
+        if ($deleted) {
+            \Log::info('Registration draft deleted', [
+                'draft_token' => $token,
+                'ip' => $request->ip()
+            ]);
+
+            return response()->json([
+                'message' => 'Draft deleted successfully'
+            ]);
+        }
+
+        return response()->json([
+            'message' => 'Draft not found'
+        ], 404);
+    }
+
+    /**
+     * List all draft tokens for a user (by email)
+     * Useful for debugging or admin purposes
+     */
+    public function listDrafts(Request $request): JsonResponse
+    {
+        $request->validate([
+            'email' => 'required|email'
+        ]);
+
+        $email = $request->input('email');
+        
+        // Note: This is a simplified implementation
+        // In production, you might want to maintain a separate index of drafts per email
+        // For now, we'll return a message indicating the limitation
+        
+        return response()->json([
+            'message' => 'To retrieve a draft, you need the draft token that was provided when saving.',
+            'note' => 'Draft tokens are stored in browser localStorage or returned in the save response.'
+        ]);
     }
 
     /**
@@ -114,7 +309,6 @@ class RegistrationController extends Controller
         }
 
         if ($verificationData['status'] === 'verified') {
-            // Email already verified, redirect with existing session token
             return redirect(env('FRONTEND_URL', 'http://127.0.0.1:5500/frontend') . '/index.html#/multi-step-register?token=' . $verificationData['token'] . '&email=' . urlencode($email) . '&message=already_verified');
         }
 
@@ -130,14 +324,14 @@ class RegistrationController extends Controller
         // Generate session token for registration
         $sessionToken = Str::random(64);
 
-        // Update cache with verified status
+        // Update cache with verified status (24 hours to complete registration)
         Cache::put($cacheKey, [
             'email' => $email,
             'token' => $sessionToken,
             'status' => 'verified',
             'verified_at' => now()->toDateTimeString(),
-            'expires_at' => now()->addHour()->toDateTimeString()
-        ], now()->addHour());
+            'expires_at' => now()->addHours(24)->toDateTimeString()
+        ], now()->addHours(24));
 
         // Redirect to registration form with token
         return redirect(env('FRONTEND_URL', 'http://127.0.0.1:5500/frontend') . '/index.html#/multi-step-register?token=' . $sessionToken . '&email=' . urlencode($email));
@@ -146,62 +340,15 @@ class RegistrationController extends Controller
     /**
      * Save registration data (multi-step)
      */
-    public function saveRegistrationData(Request $request)
+    public function saveRegistrationData(RegisterRequest $request): JsonResponse
     {
-        $request->validate([
-            'token' => 'required',
-            'email' => 'required|email',
-            'institute_id' => 'required|exists:institutes,id',
-            'first_name' => 'required|string|max:255',
-            'middle_name' => 'nullable|string|max:255',
-            'last_name' => 'required|string|max:255',
-            'suffix' => 'nullable|string|max:50',
-            'address_line1' => 'required|string|max:255',
-            'address_line2' => 'nullable|string|max:255',
-            'address_line3' => 'nullable|string|max:255',
-            'city' => 'required|string|max:255',
-            'state' => 'required|string|max:255',
-            'postal_code' => 'required|string|max:20',
-            'continent' => 'required|string|max:255',
-            'country' => 'required|string|max:255',
-            'office_country_code' => 'required|string|max:10',
-            'office_city_code' => 'nullable|string|max:10',
-            'office_number' => 'required|string|max:20',
-            'fax_number' => 'nullable|string|max:20',
-        ]);
-
         // Verify token
         $cacheKey = 'email_verification:' . $request->email;
         $verificationData = Cache::get($cacheKey);
 
-        // Debug logging
-        \Log::info('Registration submission - Email: ' . $request->email);
-        \Log::info('Registration submission - Received token: ' . $request->token);
-        \Log::info('Registration submission - Cache data: ' . json_encode($verificationData));
-
-        if (!$verificationData) {
-            \Log::error('Registration failed: No verification data in cache for ' . $request->email);
+        if (!$verificationData || $verificationData['status'] !== 'verified' || $verificationData['token'] !== $request->token) {
             return response()->json([
-                'message' => 'Invalid or expired verification token.',
-                'debug' => 'No verification data found'
-            ], 403);
-        }
-
-        if ($verificationData['status'] !== 'verified') {
-            \Log::error('Registration failed: Email not verified. Status: ' . ($verificationData['status'] ?? 'null'));
-            return response()->json([
-                'message' => 'Invalid or expired verification token.',
-                'debug' => 'Email not verified'
-            ], 403);
-        }
-
-        if ($verificationData['token'] !== $request->token) {
-            \Log::error('Registration failed: Token mismatch');
-            \Log::error('Expected: ' . $verificationData['token']);
-            \Log::error('Received: ' . $request->token);
-            return response()->json([
-                'message' => 'Invalid or expired verification token.',
-                'debug' => 'Token mismatch'
+                'message' => 'Invalid or expired verification token.'
             ], 403);
         }
 
@@ -266,7 +413,6 @@ class RegistrationController extends Controller
             ]);
         } catch (\Exception $e) {
             \Log::error('Password setup email failed: ' . $e->getMessage());
-            \Log::error('Stack trace: ' . $e->getTraceAsString());
             
             return response()->json([
                 'message' => 'Registration saved but failed to send password setup email. Please contact support.',
@@ -280,27 +426,27 @@ class RegistrationController extends Controller
      */
     public function setupPasswordPage(Request $request)
     {
-        $email = urldecode($request->query('email'));
+        $email = $request->query('email');
         $token = $request->query('token');
 
         if (!$email || !$token) {
-            return redirect(env('FRONTEND_URL', 'http://127.0.0.1:5500/frontend') . '/index.html#/login?error=invalid');
+            return redirect(env('FRONTEND_URL', 'http://127.0.0.1:5500/frontend') . '/index.html#/setup-password?error=invalid');
         }
 
         $cacheKey = 'password_setup:' . $email;
         $setupData = Cache::get($cacheKey);
 
         if (!$setupData) {
-            return redirect(env('FRONTEND_URL', 'http://127.0.0.1:5500/frontend') . '/index.html#/login?error=expired');
+            return redirect(env('FRONTEND_URL', 'http://127.0.0.1:5500/frontend') . '/index.html#/setup-password?error=expired&email=' . urlencode($email));
         }
 
         if (now()->isAfter(Carbon::parse($setupData['expires_at']))) {
             Cache::forget($cacheKey);
-            return redirect(env('FRONTEND_URL', 'http://127.0.0.1:5500/frontend') . '/index.html#/login?error=expired');
+            return redirect(env('FRONTEND_URL', 'http://127.0.0.1:5500/frontend') . '/index.html#/setup-password?error=expired&email=' . urlencode($email));
         }
 
         if (!Hash::check($token, $setupData['token'])) {
-            return redirect(env('FRONTEND_URL', 'http://127.0.0.1:5500/frontend') . '/index.html#/login?error=invalid');
+            return redirect(env('FRONTEND_URL', 'http://127.0.0.1:5500/frontend') . '/index.html#/setup-password?error=invalid&email=' . urlencode($email));
         }
 
         // Redirect to password setup page with token
@@ -310,7 +456,7 @@ class RegistrationController extends Controller
     /**
      * Set password and create user account
      */
-    public function setPassword(Request $request)
+    public function setPassword(Request $request): JsonResponse
     {
         $request->validate([
             'email' => 'required|email',
@@ -387,6 +533,8 @@ class RegistrationController extends Controller
             'state' => $registrationData->state,
             'postal_code' => $registrationData->postal_code,
             'country' => $registrationData->country,
+            'mobile_number' => $registrationData->office_number,
+            'country_code' => $registrationData->office_country_code,
         ]);
 
         // Clear cache
@@ -399,50 +547,65 @@ class RegistrationController extends Controller
         ]);
     }
 
-    /**
-     * Get continents list
-     */
-    public function getContinents()
-    {
-        $continents = [
-            'Africa',
-            'Antarctica',
-            'Asia',
-            'Europe',
-            'North America',
-            'Oceania',
-            'South America'
-        ];
+    // Private helper methods
 
-        return response()->json([
-            'continents' => $continents
-        ]);
+    private function resendPasswordSetupLink(string $email, RegistrationData $registration): JsonResponse
+    {
+        $passwordToken = Str::random(64);
+        $hashedPasswordToken = Hash::make($passwordToken);
+        
+        $passwordCacheKey = 'password_setup:' . $email;
+        Cache::put($passwordCacheKey, [
+            'email' => $email,
+            'token' => $hashedPasswordToken,
+            'registration_id' => $registration->id,
+            'expires_at' => now()->addHours(24)->toDateTimeString()
+        ], now()->addHours(24));
+        
+        $passwordSetupLink = url('/api/registration/setup-password?token=' . $passwordToken . '&email=' . urlencode($email));
+        
+        try {
+            Mail::to($email)->send(new SetPasswordMail($passwordSetupLink, $registration->full_name));
+            return response()->json([
+                'message' => 'Password setup link resent successfully! Please check your email.',
+                'email' => $email
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Resend password link failed: ' . $e->getMessage());
+            return response()->json([
+                'message' => 'Failed to send email. Please try again later.'
+            ], 500);
+        }
     }
 
-    /**
-     * Get countries by continent
-     */
-    public function getCountriesByContinent(Request $request)
+    private function resendEmailVerificationLink(string $email): JsonResponse
     {
-        $request->validate([
-            'continent' => 'required|string'
-        ]);
+        $token = Str::random(64);
+        $hashedToken = Hash::make($token);
 
-        // This is a simplified version. In production, use a proper countries database
-        $countriesByContinent = [
-            'Africa' => ['Algeria', 'Egypt', 'Kenya', 'Nigeria', 'South Africa'],
-            'Antarctica' => ['Antarctica'],
-            'Asia' => ['China', 'India', 'Japan', 'Singapore', 'South Korea', 'Thailand'],
-            'Europe' => ['France', 'Germany', 'Italy', 'Spain', 'United Kingdom'],
-            'North America' => ['Canada', 'Mexico', 'United States'],
-            'Oceania' => ['Australia', 'New Zealand', 'Fiji'],
-            'South America' => ['Argentina', 'Brazil', 'Chile', 'Colombia', 'Peru']
-        ];
+        $cacheKey = 'email_verification:' . $email;
+        Cache::put($cacheKey, [
+            'email' => $email,
+            'token' => $hashedToken,
+            'status' => 'unverified',
+            'created_at' => now()->toDateTimeString(),
+            'expires_at' => now()->addMinutes(15)->toDateTimeString()
+        ], now()->addMinutes(15));
 
-        $countries = $countriesByContinent[$request->continent] ?? [];
+        $verificationLink = url('/api/registration/verify-email?token=' . $token . '&email=' . urlencode($email));
 
-        return response()->json([
-            'countries' => $countries
-        ]);
+        try {
+            Mail::to($email)->send(new \App\Mail\VerificationMail($verificationLink));
+            
+            return response()->json([
+                'message' => 'Verification link resent successfully! Please check your email.',
+                'email' => $email
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Resend verification email failed: ' . $e->getMessage());
+            return response()->json([
+                'message' => 'Failed to send verification email.'
+            ], 500);
+        }
     }
 }
