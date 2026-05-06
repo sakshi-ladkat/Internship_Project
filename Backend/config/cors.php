@@ -1,44 +1,38 @@
 <?php
-// config/cors.php
-// Publish this with: php artisan config:publish cors
 
 return [
+
     /*
     |--------------------------------------------------------------------------
     | Cross-Origin Resource Sharing (CORS) Configuration
     |--------------------------------------------------------------------------
-    |
-    | Here you may configure your settings for cross-origin resource sharing
-    | or "CORS". This determines what cross-origin operations may execute
-    | in web browsers. You are free to adjust these settings as needed.
-    |
-    | To learn more: https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS
-    |
+    | allowed_origins supports wildcards, e.g. 'http://localhost:*'
+    | In production replace with the real frontend domain.
     */
 
-    'paths' => ['*','api/*'],  // Enable CORS for all paths
+    'paths' => ['api/*', 'sanctum/csrf-cookie'],
 
-    'allowed_methods' => ['*'],  // Allow all HTTP methods
+    'allowed_methods' => ['*'],
 
     'allowed_origins' => [
-        'http://127.0.0.1:5500',      // VS Code Live Server (development)
-        'http://127.0.0.1:5502',      // VS Code Live Server (alternative port)
-        'http://127.0.0.1:8000',      // Laravel dev server
-        'http://localhost:5500',      // Alternative localhost
-        'http://localhost:5502',      // Alternative localhost (port 5502)
-        'http://localhost:3000',      // React dev server
-        'http://localhost:8080',      // Vue dev server
-        'https://yourdomain.com',     // Production domain
-        'https://www.yourdomain.com', // Production domain with www
+        env('FRONTEND_URL', 'http://localhost:5173'),
+        'http://192.168.11.127:5173'
     ],
 
     'allowed_origins_patterns' => [],
 
-    'allowed_headers' => ['*'],  // Allow all headers
+    'allowed_headers' => [
+        'Content-Type',
+        'Accept',
+        'Authorization',
+        'X-Access-Token',
+        'X-Requested-With',
+        'X-Device-Id',
+    ],
 
     'exposed_headers' => [],
 
     'max_age' => 0,
 
-    'supports_credentials' => true,  // Required for session cookies
+    'supports_credentials' => false,
 ];

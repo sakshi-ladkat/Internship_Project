@@ -1,113 +1,123 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
-use App\Http\Controllers\RegistrationController;
 use App\Http\Controllers\InstituteController;
 use App\Http\Controllers\LocationController;
-use App\Http\Controllers\ProfileController;
-use App\Http\Controllers\AdminController;
-use App\Http\Controllers\RequestController;
-use App\Http\Controllers\SSHKeyController;
+use App\Http\Middleware\JwtMiddleware;
+use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\ReferenceController;
+use App\Http\Controllers\RegistrationController;
+use App\Http\Controllers\ReviewController;
+use App\Http\Controllers\ServiceController;
+use App\Http\Controllers\WorkflowController;
 
-Route::get('/', function () {
-    return view('welcome');
-});
-
-/**
- * Authentication Routes
+/*
+ |--------------------------------------------------------------------------
+ | API Routes
+ |--------------------------------------------------------------------------
  */
+
+
+// reference data required for the registration form like institutes, continents, countries etc.
+Route::prefix('reference')
+    ->group(function () {
+        Route::get('/institutes', [InstituteController::class , 'index']);
+        Route::get('/institutes/{id}', [InstituteController::class , 'show']);
+        Route::get('/continents', [LocationController::class , 'getContinents']);
+        Route::get('/countries', [LocationController::class , 'getCountriesByContinent']);
+        Route::get('/all-countries', [LocationController::class , 'getAllCountries']);
+        Route::get('/categories', [ReferenceController::class, 'getCategories']);
+        Route::get('/supervisors', [ReferenceController::class, 'getSupervisors']);
+        Route::get('/titles', [ReferenceController::class, 'getTitles']);
+        Route::get('/subsystems', [ReferenceController::class, 'getSubsystems']);
+    });
+
+// ── Public auth routes ────────────────────────────────────────────────────
 Route::prefix('auth')->group(function () {
-    Route::post('login', [AuthController::class, 'login'])->name('auth.login');
-    Route::post('logout', [AuthController::class, 'logout'])->name('auth.logout');
-    Route::post('me', [AuthController::class, 'me'])->name('auth.me');
-    Route::post('refresh', [AuthController::class, 'refresh'])->name('auth.refresh');
-    Route::post('update-profile', [AuthController::class, 'updateProfile'])->name('auth.update-profile');
-    Route::post('change-password', [AuthController::class, 'changePassword'])->name('auth.change-password');
-});
+    Route::post('/otp/send', [AuthController::class , 'sendOtp']);
+    Route::post('/otp/verify', [AuthController::class , 'verifyOtp']);
+    Route::post('/refresh', [AuthController::class , 'refresh']);
 
-/**
- * Registration Routes
- */
-Route::prefix('registration')->group(function () {
-    // Email verification
-    Route::post('send-verification', [RegistrationController::class, 'sendVerificationLink'])->name('registration.send-verification');
-    Route::post('resend-verification', [RegistrationController::class, 'resendVerificationLink'])->name('registration.resend-verification');
-    Route::get('verify-email', [RegistrationController::class, 'verifyEmail'])->name('registration.verify-email');
-    
-    // Registration data
-    Route::post('save-data', [RegistrationController::class, 'saveRegistrationData'])->name('registration.save-data');
-    
-    // Password setup
-    Route::get('setup-password', [RegistrationController::class, 'setupPasswordPage'])->name('registration.setup-password-page');
-    Route::post('set-password', [RegistrationController::class, 'setPassword'])->name('registration.set-password');
-    
-    // Draft management
-    Route::post('save-draft', [RegistrationController::class, 'saveDraft'])->name('registration.save-draft');
-    Route::post('get-draft', [RegistrationController::class, 'getDraft'])->name('registration.get-draft');
-    Route::post('delete-draft', [RegistrationController::class, 'deleteDraft'])->name('registration.delete-draft');
-    Route::post('list-drafts', [RegistrationController::class, 'listDrafts'])->name('registration.list-drafts');
-});
+    // Requires a valid JWT access token
+    Route::middleware(JwtMiddleware::class)->group(function () {
+            Route::post('/logout', [AuthController::class , 'logout']);
+            Route::get('/me', [AuthController::class , 'me']);
+            Route::patch('/me', [AuthController::class , 'updateProfile']);
+            Route::patch('/profile', [AuthController::class , 'updateFullProfile']);
+            Route::post('/qualification', [AuthController::class , 'addQualification']);
+            Route::post('/registration', [RegistrationController::class , 'submit']);
+            Route::get('/applications/pending-with-reminders', [WorkflowController::class, 'pendingWithReminders']);
 
-/**
- * Institute Routes
- */
-Route::prefix('institutes')->group(function () {
-    Route::get('/', [InstituteController::class, 'index'])->name('institutes.index');
-    Route::get('/{id}', [InstituteController::class, 'show'])->name('institutes.show');
-});
+            // SSH Key Management
+            Route::post('/ssh-key', [App\Http\Controllers\SshKeyController::class, 'store']);
+            Route::get('/ssh-key', [App\Http\Controllers\SshKeyController::class, 'index']);
 
-/**
- * Location Routes (Continents & Countries)
- */
-Route::prefix('locations')->group(function () {
-    Route::get('continents', [LocationController::class, 'getContinents'])->name('locations.continents');
-    Route::post('countries', [LocationController::class, 'getCountriesByContinent'])->name('locations.countries');
-    Route::post('countries-by-name', [LocationController::class, 'getCountriesByContinentName'])->name('locations.countries-by-name');
-});
+            // Secure file access
+            Route::get('/files/{id}', [App\Http\Controllers\FileController::class, 'show']);
 
-/**
- * Profile Management Routes
- */
-Route::prefix('profile')->group(function () {
-    Route::get('get-profile', [ProfileController::class, 'getProfile'])->name('profile.get');
-    Route::post('personal-info', [ProfileController::class, 'savePersonalInfo'])->name('profile.personal-info');
-    Route::post('upload-photo', [ProfileController::class, 'uploadProfilePhoto'])->name('profile.upload-photo');
-    Route::post('academic-info', [ProfileController::class, 'saveAcademicInfo'])->name('profile.academic-info');
-    Route::post('affiliation-info', [ProfileController::class, 'saveAffiliationInfo'])->name('profile.affiliation-info');
-    Route::post('project-info', [ProfileController::class, 'saveProjectInfo'])->name('profile.project-info');
-    Route::get('master-data', [ProfileController::class, 'getMasterData'])->name('profile.master-data');
-    Route::get('departments/{instituteId}', [ProfileController::class, 'getDepartmentsByInstitute'])->name('profile.departments');
-    Route::get('sub-departments/{departmentId}', [ProfileController::class, 'getSubDepartmentsByDepartment'])->name('profile.sub-departments');
-    Route::get('cities/{state}', [ProfileController::class, 'getCitiesByState'])->name('profile.cities');
-});
+            // ── Review / Approval workflow ────────────────────────────────
+            Route::prefix('review')->group(function () {
+                Route::get('/tracker/{id?}',             [WorkflowController::class, 'unifiedTracker']);
+                Route::get('/applications',                [WorkflowController::class, 'index']);
+                Route::get('/my-application',              [WorkflowController::class, 'unifiedTracker']);
+                Route::post('/applications/{id}/decide',   [WorkflowController::class, 'decide']);
+                Route::post('/applications/{id}/approve-id-card', [WorkflowController::class, 'approveIdCard']);
+                // Modal data endpoints
+                Route::get('/services',                    [ServiceController::class, 'servicesWithSubservices']);
+                Route::get('/staff/{roleSlug}',            [WorkflowController::class, 'staffByRole']);
+                Route::get('/applicant/{userId}',          [WorkflowController::class, 'applicantProfile']);
+            });
 
-/**
- * Admin Routes
- */
-Route::prefix('admin')->group(function () {
-    Route::get('users', [AdminController::class, 'getUsers'])->name('admin.users');
-    Route::get('roles', [AdminController::class, 'getRoles'])->name('admin.roles');
-    Route::get('permissions', [AdminController::class, 'getPermissions'])->name('admin.permissions');
-    Route::post('save-role', [AdminController::class, 'saveRole'])->name('admin.save-role');
-    Route::post('assign-roles', [AdminController::class, 'assignRoles'])->name('admin.assign-roles');
-});
+            // ── Admin-only routes ─────────────────────────────────────────
+            Route::prefix('admin')->group(function () {
+                // Applications
+                Route::get('/applications',                    [\App\Http\Controllers\AdminController::class, 'allApplications']);
+                Route::get('/applications/{id}/logs',          [\App\Http\Controllers\AdminController::class, 'applicationLogs']);
+                Route::get('/applications/{id}/tracker',       [WorkflowController::class, 'unifiedTracker']);
 
-/**
- * Request Management Routes
- */
-Route::prefix('requests')->group(function () {
-    Route::post('store', [RequestController::class, 'store'])->name('requests.store');
-    Route::get('user', [RequestController::class, 'userRequests'])->name('requests.user');
-    Route::get('all', [RequestController::class, 'index'])->name('requests.all');
-});
+                // Institutes
+                Route::get('/institutes',                      [\App\Http\Controllers\AdminController::class, 'institutes']);
+                Route::post('/institutes',                     [\App\Http\Controllers\AdminController::class, 'createInstitute']);
+                Route::patch('/institutes/{id}/approve',       [\App\Http\Controllers\AdminController::class, 'approveInstitute']);
+                Route::patch('/institutes/{id}/toggle-status', [\App\Http\Controllers\AdminController::class, 'toggleInstituteStatus']);
+                Route::patch('/institutes/{id}',               [\App\Http\Controllers\AdminController::class, 'updateInstitute']);
+                Route::delete('/institutes/{id}',              [\App\Http\Controllers\AdminController::class, 'deleteInstitute']);
 
-/**
- * SSH Key Management Routes
- */
-Route::prefix('ssh-keys')->group(function () {
-    Route::get('/', [SSHKeyController::class, 'index'])->name('ssh-keys.index');
-    Route::post('/', [SSHKeyController::class, 'store'])->name('ssh-keys.store');
-    Route::put('/{id}', [SSHKeyController::class, 'update'])->name('ssh-keys.update');
-    Route::delete('/{id}', [SSHKeyController::class, 'destroy'])->name('ssh-keys.destroy');
-});
+                // Users & Roles
+                Route::get('/roles',                           [\App\Http\Controllers\AdminController::class, 'roles']);
+                Route::get('/permissions',                     [\App\Http\Controllers\AdminController::class, 'permissions']);
+                Route::post('/roles',                          [\App\Http\Controllers\AdminController::class, 'storeRole']);
+                Route::patch('/roles/{id}/toggle',             [\App\Http\Controllers\AdminController::class, 'toggleRole']);
+                Route::patch('/roles/{id}',                    [\App\Http\Controllers\AdminController::class, 'updateRole']);
+                Route::get('/users/details',                   [\App\Http\Controllers\AdminController::class, 'userDetails']);
+                Route::post('/users/assign-role',              [\App\Http\Controllers\AdminController::class, 'assignRole']);
+
+                // Systems, Categories, etc.
+                Route::post('/categories',                     [\App\Http\Controllers\AdminController::class, 'storeCategory']);
+                Route::patch('/categories/{id}/toggle',        [\App\Http\Controllers\AdminController::class, 'toggleCategoryStatus']);
+                
+                Route::post('/systems',                        [\App\Http\Controllers\AdminController::class, 'storeSystem']);
+                Route::post('/subsystems',                     [\App\Http\Controllers\AdminController::class, 'storeSubsystem']);
+
+                Route::post('/services',                       [\App\Http\Controllers\AdminController::class, 'storeService']);
+                Route::post('/subservices',                    [\App\Http\Controllers\AdminController::class, 'storeSubservice']);
+
+                Route::post('/data/{entity}',                  [\App\Http\Controllers\AdminController::class, 'storeSimpleEntity']);
+                Route::patch('/data/{entity}/{id}/toggle',     [\App\Http\Controllers\AdminController::class, 'toggleSimpleEntityStatus']);
+                Route::patch('/data/{type}/{id}/change-lead',  [\App\Http\Controllers\AdminController::class, 'changeLead']);
+                Route::get('/users/by-institute',             [\App\Http\Controllers\AdminController::class, 'usersByInstitute']);
+                Route::get('/user/details',                   [\App\Http\Controllers\AdminController::class, 'userDetailsByEmail']);
+
+                // Modify Data — generic CRUD listing
+                Route::get('/data/{entity}',                   [\App\Http\Controllers\AdminController::class, 'listEntity']);
+
+                // Full workflow pipeline (with steps)
+                Route::get('/workflows-full',                  [\App\Http\Controllers\AdminController::class, 'workflowsWithSteps']);
+
+                // Workflow versioning
+                Route::put('/workflows/{id}',                  [\App\Http\Controllers\AdminController::class, 'updateWorkflow']);
+                Route::delete('/workflows/{id}',               [\App\Http\Controllers\AdminController::class, 'deleteWorkflow']);
+                Route::post('/workflows/{id}/rollback',        [\App\Http\Controllers\AdminController::class, 'rollbackWorkflow']);
+            });
+        });
+    });

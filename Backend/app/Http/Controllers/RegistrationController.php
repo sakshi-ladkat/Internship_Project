@@ -2,610 +2,346 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Requests\RegisterRequest;
-use App\Models\RegistrationData;
-use App\Models\User;
-use App\Mail\SetPasswordMail;
 use Illuminate\Http\Request;
-use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\Cache;
+use App\Models\User;
+use Illuminate\Support\Facades\DB;
+use App\Models\Institute;
+use App\Models\Role;
+use App\Models\Title;
+use App\Models\Country;
+use Illuminate\Support\Facades\Log;
+use App\Models\Continent;   
 use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Str;
-use Carbon\Carbon;
+use App\Mail\ApplicationSubmissionMail;
+use App\Mail\ApplicationConfirmationMail;
 
 class RegistrationController extends Controller
 {
-    /**
-     * Send email verification link
-     */
-    public function sendVerificationLink(Request $request): JsonResponse
+    public function submit(Request $request)
     {
-        // Rate limiting: max 3 requests per minute per IP+email
-        $key = 'verification:' . $request->ip() . ':' . $request->input('email');
-        
-        if (\Illuminate\Support\Facades\RateLimiter::tooManyAttempts($key, 3)) {
-            return response()->json([
-                'message' => 'Too many verification requests. Please try again later.'
-            ], 429);
+        Log::warning('HIT REGISTRATION');
+        // Auth user ID is securely provided by our custom JwtMiddleware
+        $userId = $request->auth_user_id;
+
+        if (!$userId) {
+            return response()->json(['error' => 'Unauthorized. No session found.'], 401);
         }
 
-        \Illuminate\Support\Facades\RateLimiter::hit($key, 60); // 60 seconds decay
-
-        $request->validate([
-            'email' => 'required|email|max:255'
-        ]);
-
-        $email = $request->email;
-
-        // Check if email already exists in users table
-        if (User::where('email', $email)->exists()) {
-            return response()->json([
-                'message' => 'Email is already registered.'
-            ], 409);
+        // Verify that the user still exists in the database (handles post-migration stale sessions)
+        $userExists = User::where('user_id', $userId)->exists();
+        if (!$userExists) {
+            return response()->json(['error' => 'Your session is stale (user no longer exists in database). Please log out and back in.'], 401);
         }
-
-        // Check if email already has a pending registration
-        $existingRegistration = RegistrationData::where('email', $email)
-            ->whereIn('status', ['email_verified', 'password_set'])
-            ->first();
-
-        if ($existingRegistration) {
-            return response()->json([
-                'message' => 'Email already has a pending registration.'
-            ], 409);
-        }
-
-        // Generate verification token (64 characters for enhanced security)
-        $token = Str::random(64);
-        $hashedToken = Hash::make($token);
-
-        // Store in cache (24 hours)
-        $cacheKey = 'email_verification:' . $email;
-        Cache::put($cacheKey, [
-            'email' => $email,
-            'token' => $hashedToken,
-            'status' => 'unverified',
-            'created_at' => now()->toDateTimeString(),
-            'expires_at' => now()->addHours(24)->toDateTimeString()
-        ], now()->addHours(24));
-
-        // Generate verification link
-        $verificationLink = url('/api/registration/verify-email?token=' . $token . '&email=' . urlencode($email));
-
-        \Log::info('Generated Verification Link: ' . $verificationLink);
-
-        // Send email
-        try {
-            Mail::to($email)->send(new \App\Mail\VerificationMail($verificationLink));
-            
-            // Log successful verification email send for security audit
-            \Log::info('Verification email sent', [
-                'email' => $email,
-                'ip' => $request->ip(),
-                'timestamp' => now()->toDateTimeString()
-            ]);
-            
-            return response()->json([
-                'message' => 'Verification link sent successfully! Please check your email.',
-                'email' => $email
-            ]);
-        } catch (\Exception $e) {
-            \Log::error('Verification email failed: ' . $e->getMessage(), [
-                'email' => $email,
-                'ip' => $request->ip()
-            ]);
-            
-            return response()->json([
-                'message' => 'Failed to send verification email. Please try again.'
-            ], 500);
-        }
-    }
-
-    /**
-     * Resend verification link (Smart dispatch)
-     */
-    public function resendVerificationLink(Request $request): JsonResponse
-    {
-        // Rate limiting: max 2 resend requests per 10 minutes per IP+email
-        $key = 'resend-verification:' . $request->ip() . ':' . $request->input('email');
-        
-        if (\Illuminate\Support\Facades\RateLimiter::tooManyAttempts($key, 2)) {
-            return response()->json([
-                'message' => 'Too many resend requests. Please try again in 10 minutes.'
-            ], 429);
-        }
-
-        \Illuminate\Support\Facades\RateLimiter::hit($key, 600); // 600 seconds (10 minutes) decay
-
-        $request->validate([
-            'email' => 'required|email|max:255'
-        ]);
-
-        $email = $request->email;
-
-        // Check if user account already exists
-        if (User::where('email', $email)->exists()) {
-            // Don't reveal that account exists for security
-            return response()->json([
-                'message' => 'If this email is registered, a verification link will be sent.'
-            ], 200);
-        }
-
-        // Check for pending registration data
-        $registration = RegistrationData::where('email', $email)->first();
-
-        if ($registration && $registration->status === 'email_verified') {
-            // Resend Password Setup Link
-            return $this->resendPasswordSetupLink($email, $registration);
-        } elseif ($registration && $registration->status === 'completed') {
-             return response()->json([
-                'message' => 'Registration completed. Please login.'
-            ], 409);
-        }
-
-        // Resend Initial Email Verification Link
-        return $this->resendEmailVerificationLink($email);
-    }
-
-    /**
-     * Save registration draft data
-     * Stores partial registration data in Redis cache for 30 minutes
-     */
-    public function saveDraft(Request $request): JsonResponse
-    {
-        // Validate that we have at least some data to save
-        $request->validate([
-            'email' => 'nullable|email|max:255',
-            'token' => 'nullable|string',
-        ]);
-
-        // Generate a unique draft token if not provided
-        $draftToken = $request->input('draftToken') ?? Str::uuid()->toString();
-        
-        // Prepare draft data (exclude sensitive fields)
-        $draftData = $request->except(['password', 'password_confirmation', 'draftToken']);
-        
-        // Add metadata
-        $draftData['saved_at'] = now()->toDateTimeString();
-        $draftData['expires_at'] = now()->addMinutes(30)->toDateTimeString();
-        
-        // Store in Redis cache with 30-minute expiration
-        $cacheKey = 'register_draft_' . $draftToken;
-        Cache::put($cacheKey, $draftData, now()->addMinutes(30));
-        
-        // Log draft save for debugging
-        \Log::info('Registration draft saved', [
-            'draft_token' => $draftToken,
-            'has_email' => !empty($draftData['email']),
-            'ip' => $request->ip(),
-            'timestamp' => now()->toDateTimeString()
-        ]);
-
-        return response()->json([
-            'message' => 'Draft saved successfully',
-            'draftToken' => $draftToken,
-            'expiresAt' => $draftData['expires_at']
-        ]);
-    }
-
-    /**
-     * Retrieve registration draft data
-     * Fetches saved draft data from Redis cache
-     */
-    public function getDraft(Request $request): JsonResponse
-    {
-        $request->validate([
-            'token' => 'required|string'
-        ]);
-
-        $token = $request->input('token');
-        $cacheKey = 'register_draft_' . $token;
-        
-        // Retrieve draft from cache
-        $draftData = Cache::get($cacheKey);
-
-        if (!$draftData) {
-            return response()->json([
-                'message' => 'Draft not found or has expired',
-                'draft' => null
-            ], 404);
-        }
-
-        // Check if draft has expired
-        if (isset($draftData['expires_at']) && now()->isAfter(Carbon::parse($draftData['expires_at']))) {
-            Cache::forget($cacheKey);
-            return response()->json([
-                'message' => 'Draft has expired',
-                'draft' => null
-            ], 410);
-        }
-
-        // Log draft retrieval
-        \Log::info('Registration draft retrieved', [
-            'draft_token' => $token,
-            'has_email' => !empty($draftData['email']),
-            'ip' => $request->ip()
-        ]);
-
-        return response()->json([
-            'message' => 'Draft retrieved successfully',
-            'draft' => $draftData,
-            'expiresAt' => $draftData['expires_at'] ?? null
-        ]);
-    }
-
-    /**
-     * Delete registration draft data
-     * Removes draft from Redis cache
-     */
-    public function deleteDraft(Request $request): JsonResponse
-    {
-        $request->validate([
-            'token' => 'required|string'
-        ]);
-
-        $token = $request->input('token');
-        $cacheKey = 'register_draft_' . $token;
-        
-        // Delete from cache
-        $deleted = Cache::forget($cacheKey);
-
-        if ($deleted) {
-            \Log::info('Registration draft deleted', [
-                'draft_token' => $token,
-                'ip' => $request->ip()
-            ]);
-
-            return response()->json([
-                'message' => 'Draft deleted successfully'
-            ]);
-        }
-
-        return response()->json([
-            'message' => 'Draft not found'
-        ], 404);
-    }
-
-    /**
-     * List all draft tokens for a user (by email)
-     * Useful for debugging or admin purposes
-     */
-    public function listDrafts(Request $request): JsonResponse
-    {
-        $request->validate([
-            'email' => 'required|email'
-        ]);
-
-        $email = $request->input('email');
-        
-        // Note: This is a simplified implementation
-        // In production, you might want to maintain a separate index of drafts per email
-        // For now, we'll return a message indicating the limitation
-        
-        return response()->json([
-            'message' => 'To retrieve a draft, you need the draft token that was provided when saving.',
-            'note' => 'Draft tokens are stored in browser localStorage or returned in the save response.'
-        ]);
-    }
-
-    /**
-     * Verify email from link
-     */
-    public function verifyEmail(Request $request)
-    {
-        $email = $request->query('email');
-        $token = $request->query('token');
-
-        if (!$email || !$token) {
-            return redirect(env('FRONTEND_URL', 'http://127.0.0.1:5500/frontend') . '/index.html#/multi-step-register?error=invalid');
-        }
-
-        $cacheKey = 'email_verification:' . $email;
-        $verificationData = Cache::get($cacheKey);
-
-        if (!$verificationData) {
-            return redirect(env('FRONTEND_URL', 'http://127.0.0.1:5500/frontend') . '/index.html#/multi-step-register?error=expired');
-        }
-
-        if ($verificationData['status'] === 'verified') {
-            return redirect(env('FRONTEND_URL', 'http://127.0.0.1:5500/frontend') . '/index.html#/multi-step-register?token=' . $verificationData['token'] . '&email=' . urlencode($email) . '&message=already_verified');
-        }
-
-        if (now()->isAfter(Carbon::parse($verificationData['expires_at']))) {
-            Cache::forget($cacheKey);
-            return redirect(env('FRONTEND_URL', 'http://127.0.0.1:5500/frontend') . '/index.html#/multi-step-register?error=expired');
-        }
-
-        if (!Hash::check($token, $verificationData['token'])) {
-            return redirect(env('FRONTEND_URL', 'http://127.0.0.1:5500/frontend') . '/index.html#/multi-step-register?error=invalid');
-        }
-
-        // Generate session token for registration
-        $sessionToken = Str::random(64);
-
-        // Update cache with verified status (24 hours to complete registration)
-        Cache::put($cacheKey, [
-            'email' => $email,
-            'token' => $sessionToken,
-            'status' => 'verified',
-            'verified_at' => now()->toDateTimeString(),
-            'expires_at' => now()->addHours(24)->toDateTimeString()
-        ], now()->addHours(24));
-
-        // Redirect to registration form with token
-        return redirect(env('FRONTEND_URL', 'http://127.0.0.1:5500/frontend') . '/index.html#/multi-step-register?token=' . $sessionToken . '&email=' . urlencode($email));
-    }
-
-    /**
-     * Save registration data (multi-step)
-     */
-    public function saveRegistrationData(RegisterRequest $request): JsonResponse
-    {
-        // Verify token
-        $cacheKey = 'email_verification:' . $request->email;
-        $verificationData = Cache::get($cacheKey);
-
-        if (!$verificationData || $verificationData['status'] !== 'verified' || $verificationData['token'] !== $request->token) {
-            return response()->json([
-                'message' => 'Invalid or expired verification token.'
-            ], 403);
-        }
-
-        // Check if email already registered
-        if (User::where('email', $request->email)->exists()) {
-            return response()->json([
-                'message' => 'Email is already registered.'
-            ], 409);
-        }
-
-        // Create or update registration data
-        $registrationData = RegistrationData::updateOrCreate(
-            ['email' => $request->email],
-            [
-                'institute_id' => $request->institute_id,
-                'first_name' => $request->first_name,
-                'middle_name' => $request->middle_name,
-                'last_name' => $request->last_name,
-                'suffix' => $request->suffix,
-                'address_line1' => $request->address_line1,
-                'address_line2' => $request->address_line2,
-                'address_line3' => $request->address_line3,
-                'city' => $request->city,
-                'state' => $request->state,
-                'postal_code' => $request->postal_code,
-                'continent' => $request->continent,
-                'country' => $request->country,
-                'office_country_code' => $request->office_country_code,
-                'office_city_code' => $request->office_city_code,
-                'office_number' => $request->office_number,
-                'fax_number' => $request->fax_number,
-                'status' => 'email_verified',
-                'email_verified_at' => now(),
-            ]
-        );
-
-        // Generate password setup token
-        $passwordToken = Str::random(64);
-        $hashedPasswordToken = Hash::make($passwordToken);
-
-        // Store password setup token in cache (24 hours)
-        $passwordCacheKey = 'password_setup:' . $request->email;
-        Cache::put($passwordCacheKey, [
-            'email' => $request->email,
-            'token' => $hashedPasswordToken,
-            'registration_id' => $registrationData->id,
-            'expires_at' => now()->addHours(24)->toDateTimeString()
-        ], now()->addHours(24));
-
-        // Send password setup email
-        $passwordSetupLink = url('/api/registration/setup-password?token=' . $passwordToken . '&email=' . urlencode($request->email));
 
         try {
-            Mail::to($request->email)->send(new SetPasswordMail($passwordSetupLink, $registrationData->full_name));
+            Log::info('Registration Submission Started', [
+                'user_id' => $userId,
+            ]);
+
+            $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
+                'graduationYear' => 'required|digits:4|integer|min:' . (date('Y') - 70) . '|max:2100',
+                'graduationMonth' => 'required|integer|min:1|max:12',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json(['error' => 'Please provide a valid 4-digit graduation year (e.g. 2024) and month.'], 422);
+            }
+
+            DB::beginTransaction();
             
-            // Clear verification cache
-            Cache::forget($cacheKey);
+            $instituteId = $request->input('institute');
+            if ($instituteId === 'other') {
+                $otherName = $request->input('otherInstitute');
+                if (!$otherName) {
+                    DB::rollBack();
+                    return response()->json(['error' => 'Please provide the custom institute name.'], 422);
+                }
+                
+                $newInst =Institute::create([
+                    'name' => $otherName,
+                    'is_active' => false // Pending approval
+                ]);
+                $instituteId = $newInst->id;
+            }
+
+            // Sync User Affiliation logic
+            if ($instituteId) {
+                $affiliationData = [
+                    'institute_id' => $instituteId,
+                    'category_id' => $request->input('designation'),
+                    'is_active' => true,
+                    'created_at' => now(),
+                    'updated_at' => now()
+                ];
+
+                if ($request->hasFile('id_card')) {
+                    $file = $request->file('id_card');
+                    if (!$file->isValid()) {
+                        DB::rollBack();
+                        return response()->json(['error' => 'Invalid file upload: ' . $file->getErrorMessage()], 422);
+                    }
+                    $path = $file->store('id_cards');
+                    $affiliationData['id_card_path'] = $path;
+                    Log::info('ID Card file stored successfully', [
+                        'path' => $path,
+                        'size' => $file->getSize(),
+                        'mime' => $file->getMimeType()
+                    ]);
+                } else {
+                    // Check if the upload was truncated by PHP limits
+                    $contentLength = (int)$request->header('Content-Length');
+                    if ($contentLength > 2000000) { // > 2MB
+                        DB::rollBack();
+                        Log::error('Upload detected but file is missing. This usually means the file exceeds PHP upload_max_filesize (currently 2MB).', [
+                            'content_length' => $contentLength,
+                            'upload_max_filesize' => ini_get('upload_max_filesize')
+                        ]);
+                        return response()->json([
+                            'error' => 'The ID card file is too large for the server. Please upload an image smaller than 2MB or increase server limits.'
+                        ], 422);
+                    }
+
+                    DB::rollBack();
+                    return response()->json(['error' => 'Identity Card is required for registration.'], 422);
+                }
+
+                DB::table('user_affilation')->updateOrInsert(
+                    ['user_id' => $userId],
+                    $affiliationData
+                );
+            }
+            
+            // 1. Assign default 'User' role in active state
+            $baseRole = Role::firstOrCreate(['slug' => 'user'], ['name' => 'User', 'is_active' => true]);
+            DB::table('user_roles')->updateOrInsert(
+                ['user_id' => $userId, 'role_id' => $baseRole->id],
+                ['is_active' => true, 'created_at' => now(), 'updated_at' => now()]
+            );
+
+            // 2. Automate user_request entry for Admin approval cue
+            $regAction = DB::table('requests')->where('name', 'Account Activation')->first();
+            if (!$regAction) {
+                $requestId = DB::table('requests')->insertGetId([
+                    'name' => 'Account Activation',
+                    'type' => 'service_permission',
+                    'created_at' => now(),
+                    'updated_at' => now()
+                ]);
+            } else {
+                /** @var object $regAction */
+                $requestId = $regAction->id;
+            }
+
+            DB::table('user_requests')->updateOrInsert(
+                ['user_id' => $userId, 'request_id' => $requestId],
+                ['is_active' => true, 'created_at' => now(), 'updated_at' => now()]
+            );
+
+            // 3. Algorithmically locate Workflow schema mapped to this Request + Category
+            $targetWorkflow = DB::table('workflow_category_mappings as wcm')
+                ->join('workflows as wf', 'wcm.workflow_id', '=', 'wf.workflow_id')
+                ->where('wcm.request_id', $requestId)
+                ->where('wcm.category_id', $request->input('designation'))
+                ->where('wf.is_latest', true)
+                ->where('wf.is_active', true)
+                ->select('wf.workflow_id')
+                ->first();
+                
+            $workflowId = $targetWorkflow ? $targetWorkflow->workflow_id : null;
+            
+            // 4. Mount Application dynamically into the routing pipeline
+            if ($workflowId) {
+                $firstStep = DB::table('workflow_steps')
+                    ->where('workflow_id', $workflowId)
+                    ->orderBy('step_no', 'asc')
+                    ->first();
+                
+                $applicationId = DB::table('applications')->updateOrInsert(
+                    ['user_id' => $userId, 'request_id' => $requestId],
+                    [
+                        'application_id' => uniqid('APP-'),
+                        'workflow_id' => $workflowId,
+                        'current_step_id' => $firstStep ? $firstStep->workflow_step_id : null,
+                        'status' => 'registered',
+                        'id_card_path' => $affiliationData['id_card_path'] ?? null,
+                        'is_active' => true,
+                        'created_at' => now(),
+                        'updated_at' => now()
+                    ]
+                );
+
+                // Fetch the actual application record to get its primary ID
+                $appRecord = DB::table('applications')
+                    ->where('user_id', $userId)
+                    ->where('request_id', $requestId)
+                    ->first();
+
+                if ($appRecord) {
+                    // Pre-create all approval entries for transparency
+                    $allSteps = DB::table('workflow_steps')
+                        ->where('workflow_id', $workflowId)
+                        ->orderBy('step_no', 'asc')
+                        ->get();
+
+                    foreach ($allSteps as $ws) {
+                        DB::table('application_approvals')->updateOrInsert(
+                            ['application_id' => $appRecord->id, 'workflow_step_id' => $ws->workflow_step_id],
+                            [
+                                'status' => 'pending',
+                                'created_at' => now(),
+                                'updated_at' => now()
+                            ]
+                        );
+                    }
+                }
+            }
+
+            // 3. Complete Profile Demographics Sync
+            $titleName = Title::find($request->input('title'))?->name ?? $request->input('title', 'Unknown');
+            DB::table('user_profiles')->updateOrInsert(
+                ['user_id' => $userId],
+                [
+                    'title' => $titleName,
+                    'first_name' => $request->input('firstName', 'Unknown'),
+                    'middle_name' => $request->input('middleName'),
+                    'last_name' => $request->input('lastName', 'Unknown'),
+                    'date_of_birth' => $request->input('dob', now()->toDateString()),
+                    'gender' => strtolower($request->input('gender', 'prefer-not-to-say')),
+                    'created_at' => now(),
+                    'updated_at' => now()
+                ]
+            );
+
+            // 4. Academic Sync
+            $gradYear = $request->input('graduationYear') ?: date('Y');
+            $gradMonth = $request->input('graduationMonth') ?: 5;
+            $now = now();
+            $isQualActive = ($gradYear > $now->year) || ($gradYear == $now->year && $gradMonth >= $now->month);
+
+            DB::table('user_qualification')->updateOrInsert(
+                ['user_id' => $userId],
+                [
+                    'highest_qualification' => $request->input('highestDegree', 'None'),
+                    'field_of_study' => $request->input('fieldOfStudy', 'None'),
+                    'university' => $request->input('institutionAwarded', 'None'),
+                    'graduation_year' => $gradYear,
+                    'graduation_month' => $gradMonth,
+                    'is_active' => $isQualActive,
+                    'created_at' => now(),
+                    'updated_at' => now()
+                ]
+            );
+
+            // 5. Contact Logistics Sync
+            DB::table('user_contacts')->updateOrInsert(
+                ['user_id' => $userId],
+                [
+                    'continent_name' => Continent::find($request->input('continent'))?->name ?? 'Unknown',
+                    'country_name' => Country::find($request->input('country'))?->name ?? 'Unknown',
+                    'address_line_1' => $request->input('address1', 'Unknown'),
+                    'address_line_2' => $request->input('address2'),
+                    'address_line_3' => $request->input('address3'),
+                    'city' => $request->input('city', 'Unknown'),
+                    'state' => $request->input('state', 'Unknown'),
+                    'postal_code' => $request->input('zipcode', 'Unknown'),
+                    'country_code' => $request->input('phoneCode', ''),
+                    'city_code' => $request->input('cityCode', ''),
+                    'phone_number' => $request->input('phoneNumber', ''),
+                    'fax_number' => $request->input('faxNumber', ''),
+                    'created_at' => now(),
+                    'updated_at' => now()
+                ]
+            );
+
+            // 6. Supervisor Pipeline Trigger
+            $supervisorId = $request->input('supervisorSelect');
+            if ($supervisorId) {
+                DB::table('user_supervisors')->updateOrInsert(
+                    ['user_id' => $userId],
+                    [
+                        'supervisor_id' => $supervisorId,
+                        'is_active' => true,
+                        'created_at' => now(),
+                        'updated_at' => now()
+                    ]
+                );
+            }
+            
+            $user = User::where('user_id', $userId)->first();
+            
+            if ($user && $user->status === 'onboarding') {
+                $user->update(['status' => 'pending-approval']);
+            }
+
+            DB::commit();
+
+            // 7. Trigger Automated Notifications
+            try {
+                if (isset($appRecord) && $appRecord) {
+                    $applicantProfile = DB::table('user_profiles')->where('user_id', $userId)->first();
+                    $applicantName = $applicantProfile ? ($applicantProfile->first_name . ' ' . $applicantProfile->last_name) : 'Applicant';
+                    $wfName = DB::table('workflows')->where('workflow_id', $workflowId)->value('workflow_name') ?? 'Default Workflow';
+                    
+                    // Notify the supervisor (first reviewer)
+                    if ($supervisorId) {
+                        $supervisorUser = User::where('user_id', $supervisorId)->first();
+                        if ($supervisorUser && $supervisorUser->email) {
+                            Mail::to($supervisorUser->email)->queue(new \App\Mail\ApplicationSubmissionMail(
+                                $applicantName,
+                                $appRecord->application_id,
+                                $wfName
+                            ));
+                        }
+                    } else {
+                        // Fallback: Notify anyone in the role assigned to the first step
+                        $firstStep = DB::table('workflow_steps')
+                            ->where('workflow_id', $workflowId)
+                            ->where('step_no', 1)
+                            ->first();
+                            
+                        if ($firstStep) {
+                            $approverEmails = DB::table('users')
+                                ->join('user_roles', 'users.user_id', '=', 'user_roles.user_id')
+                                ->where('user_roles.role_id', $firstStep->role_id)
+                                ->pluck('email')
+                                ->toArray();
+                                
+                            foreach (array_filter($approverEmails) as $email) {
+                                Mail::to($email)->queue(new \App\Mail\ApplicationSubmissionMail(
+                                    $applicantName,
+                                    $appRecord->application_id,
+                                    $wfName
+                                ));
+                            }
+                        }
+                    }
+
+                    // Notify the applicant — submission confirmation
+                    $applicantUser = User::where('user_id', $userId)->first();
+                    if ($applicantUser && $applicantUser->email) {
+                        Mail::to($applicantUser->email)->queue(new ApplicationConfirmationMail(
+                            $applicantName,
+                            $appRecord->application_id,
+                            $wfName
+                        ));
+                    }
+                }
+            } catch (\Exception $mailEx) {
+                Log::error('Registration Email Error: ' . $mailEx->getMessage());
+                // Non-blocking for the user
+            }
 
             return response()->json([
-                'message' => 'Registration successful! Please check your email to set your password.',
-                'registration_id' => $registrationData->id
+                'message' => 'Registration completed successfully.',
+                'user' => $user
             ]);
         } catch (\Exception $e) {
-            \Log::error('Password setup email failed: ' . $e->getMessage());
-            
-            return response()->json([
-                'message' => 'Registration saved but failed to send password setup email. Please contact support.',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Verify password setup token and show password form
-     */
-    public function setupPasswordPage(Request $request)
-    {
-        $email = $request->query('email');
-        $token = $request->query('token');
-
-        if (!$email || !$token) {
-            return redirect(env('FRONTEND_URL', 'http://127.0.0.1:5500/frontend') . '/index.html#/setup-password?error=invalid');
-        }
-
-        $cacheKey = 'password_setup:' . $email;
-        $setupData = Cache::get($cacheKey);
-
-        if (!$setupData) {
-            return redirect(env('FRONTEND_URL', 'http://127.0.0.1:5500/frontend') . '/index.html#/setup-password?error=expired&email=' . urlencode($email));
-        }
-
-        if (now()->isAfter(Carbon::parse($setupData['expires_at']))) {
-            Cache::forget($cacheKey);
-            return redirect(env('FRONTEND_URL', 'http://127.0.0.1:5500/frontend') . '/index.html#/setup-password?error=expired&email=' . urlencode($email));
-        }
-
-        if (!Hash::check($token, $setupData['token'])) {
-            return redirect(env('FRONTEND_URL', 'http://127.0.0.1:5500/frontend') . '/index.html#/setup-password?error=invalid&email=' . urlencode($email));
-        }
-
-        // Redirect to password setup page with token
-        return redirect(env('FRONTEND_URL', 'http://127.0.0.1:5500/frontend') . '/index.html#/setup-password?token=' . $token . '&email=' . urlencode($email));
-    }
-
-    /**
-     * Set password and create user account
-     */
-    public function setPassword(Request $request): JsonResponse
-    {
-        $request->validate([
-            'email' => 'required|email',
-            'token' => 'required',
-            'password' => 'required|min:8|confirmed',
-        ]);
-
-        $cacheKey = 'password_setup:' . $request->email;
-        $setupData = Cache::get($cacheKey);
-
-        if (!$setupData || !Hash::check($request->token, $setupData['token'])) {
-            return response()->json([
-                'message' => 'Invalid or expired password setup token.'
-            ], 403);
-        }
-
-        if (now()->isAfter(Carbon::parse($setupData['expires_at']))) {
-            Cache::forget($cacheKey);
-            return response()->json([
-                'message' => 'Password setup token has expired.'
-            ], 403);
-        }
-
-        // Get registration data
-        $registrationData = RegistrationData::find($setupData['registration_id']);
-
-        if (!$registrationData) {
-            return response()->json([
-                'message' => 'Registration data not found.'
-            ], 404);
-        }
-
-        // Check if user already exists
-        if (User::where('email', $request->email)->exists()) {
-            return response()->json([
-                'message' => 'User account already exists. Please login.'
-            ], 409);
-        }
-
-        // Generate username
-        $baseUsername = strtolower(explode('@', $request->email)[0]);
-        $username = $baseUsername;
-        $count = 1;
-
-        while (User::where('username', $username)->exists()) {
-            $username = $baseUsername . $count++;
-        }
-
-        // Create user account
-        $user = User::create([
-            'email' => $request->email,
-            'username' => $username,
-            'password' => Hash::make($request->password),
-            'institute_id' => $registrationData->institute_id,
-            'email_verified_at' => now(),
-        ]);
-
-        // Update registration data
-        $registrationData->update([
-            'user_id' => $user->id,
-            'status' => 'completed',
-            'password_set_at' => now(),
-        ]);
-
-        // Create user profile from registration data
-        $user->profile()->create([
-            'first_name' => $registrationData->first_name,
-            'middle_name' => $registrationData->middle_name,
-            'last_name' => $registrationData->last_name,
-            'address_line1' => $registrationData->address_line1,
-            'address_line2' => $registrationData->address_line2,
-            'address_line3' => $registrationData->address_line3,
-            'city' => $registrationData->city,
-            'state' => $registrationData->state,
-            'postal_code' => $registrationData->postal_code,
-            'country' => $registrationData->country,
-            'mobile_number' => $registrationData->office_number,
-            'country_code' => $registrationData->office_country_code,
-        ]);
-
-        // Clear cache
-        Cache::forget($cacheKey);
-
-        return response()->json([
-            'message' => 'Password set successfully! You can now login.',
-            'user_id' => $user->id,
-            'username' => $username
-        ]);
-    }
-
-    // Private helper methods
-
-    private function resendPasswordSetupLink(string $email, RegistrationData $registration): JsonResponse
-    {
-        $passwordToken = Str::random(64);
-        $hashedPasswordToken = Hash::make($passwordToken);
-        
-        $passwordCacheKey = 'password_setup:' . $email;
-        Cache::put($passwordCacheKey, [
-            'email' => $email,
-            'token' => $hashedPasswordToken,
-            'registration_id' => $registration->id,
-            'expires_at' => now()->addHours(24)->toDateTimeString()
-        ], now()->addHours(24));
-        
-        $passwordSetupLink = url('/api/registration/setup-password?token=' . $passwordToken . '&email=' . urlencode($email));
-        
-        try {
-            Mail::to($email)->send(new SetPasswordMail($passwordSetupLink, $registration->full_name));
-            return response()->json([
-                'message' => 'Password setup link resent successfully! Please check your email.',
-                'email' => $email
+            DB::rollBack();
+            Log::error('Registration Error: ' . $e->getMessage(), [
+                'user_id' => $userId,
+                'trace' => $e->getTraceAsString()
             ]);
-        } catch (\Exception $e) {
-            \Log::error('Resend password link failed: ' . $e->getMessage());
-            return response()->json([
-                'message' => 'Failed to send email. Please try again later.'
-            ], 500);
-        }
-    }
-
-    private function resendEmailVerificationLink(string $email): JsonResponse
-    {
-        $token = Str::random(64);
-        $hashedToken = Hash::make($token);
-
-        $cacheKey = 'email_verification:' . $email;
-        Cache::put($cacheKey, [
-            'email' => $email,
-            'token' => $hashedToken,
-            'status' => 'unverified',
-            'created_at' => now()->toDateTimeString(),
-            'expires_at' => now()->addMinutes(15)->toDateTimeString()
-        ], now()->addMinutes(15));
-
-        $verificationLink = url('/api/registration/verify-email?token=' . $token . '&email=' . urlencode($email));
-
-        try {
-            Mail::to($email)->send(new \App\Mail\VerificationMail($verificationLink));
-            
-            return response()->json([
-                'message' => 'Verification link resent successfully! Please check your email.',
-                'email' => $email
-            ]);
-        } catch (\Exception $e) {
-            \Log::error('Resend verification email failed: ' . $e->getMessage());
-            return response()->json([
-                'message' => 'Failed to send verification email.'
-            ], 500);
+            return response()->json(['error' => 'Registration failed due to a system error. Please try logging out and in again to refresh your session.'], 500);
         }
     }
 }

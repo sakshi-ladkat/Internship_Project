@@ -14,11 +14,10 @@ class InstituteController extends Controller
     {
         $institutes = Institute::where('is_active', true)
             ->orderBy('name')
-            ->get(['id', 'name', 'country', 'city']);
+            ->get(['id', 'name', 'code', 'city']);
 
-        return response()->json([
-            'institutes' => $institutes
-        ]);
+        //  Return plain array for frontend forEach()
+        return response()->json($institutes);
     }
 
     /**
@@ -29,8 +28,6 @@ class InstituteController extends Controller
         $institute = Institute::where('is_active', true)
             ->findOrFail($id);
 
-        return response()->json([
-            'institute' => $institute
-        ]);
+        return response()->json($institute);
     }
 }

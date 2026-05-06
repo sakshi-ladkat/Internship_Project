@@ -2,142 +2,87 @@
 
 namespace App\Models;
 
+// use Illuminate\Contracts\Auth\MustVerifyEmail;
+use Database\Factories\UserFactory;
+use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Database\Eloquent\Concerns\HasUlids;
+
 
 class User extends Authenticatable
 {
-    use HasFactory, Notifiable;
+    /** @use HasFactory<UserFactory> */
+    use HasFactory, Notifiable, HasUlids;
 
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var array<int, string>
-     */
-    protected $fillable = [
-        'username',
+    protected $primaryKey = 'user_id';
+
+     protected $fillable = [
         'email',
-        'password',
-        'institute_id',
-        'email_verified_at',
+        'status',
+        'remember_token'
     ];
 
-    /**
-     * The attributes that should be hidden for serialization.
-     *
-     * @var array<int, string>
-     */
-    protected $hidden = [
-        'password',
-        'remember_token',
-    ];
-
-    /**
-     * Get the attributes that should be cast.
-     *
-     * @return array<string, string>
-     */
-    protected function casts(): array
-    {
-        return [
-            'email_verified_at' => 'datetime',
-            'password' => 'hashed',
-        ];
-    }
-
-    /**
-     * Get the user's profile
-     */
-    public function profile()
-    {
-        return $this->hasOne(UserProfile::class);
-    }
-
-    /**
-     * Get the user's academic information
-     */
-    public function academicInformation()
-    {
-        return $this->hasMany(AcademicInformation::class);
-    }
-
-    /**
-     * Get the user's affiliation details
-     */
-    public function affiliationDetails()
-    {
-        return $this->hasOne(AffiliationDetail::class);
-    }
-
-    /**
-     * Get the user's project details
-     */
-    public function projectDetails()
-    {
-        return $this->hasMany(ProjectDetail::class);
-    }
-
-    /**
-     * Get the user's roles
-     */
+   
     public function roles()
     {
-        return $this->belongsToMany(Role::class)
-                    ->withPivot(['institute_id', 'department_id', 'sub_department_id'])
+        return $this->belongsToMany(Role::class, 'user_roles', 'user_id', 'role_id')->withPivot('is_active');
+    }
+
+    public function supervisors()
+    {
+        return $this->belongsToMany(User::class, 'user_supervisors', 'user_id', 'supervisor_id')
+                    ->withPivot('is_active')
                     ->withTimestamps();
     }
 
-    /**
-     * Check if user has a specific role
-     */
-    public function hasRole($roleSlug)
+    public function subordinates()
     {
-        return $this->roles()->where('slug', $roleSlug)->exists();
+        return $this->belongsToMany(User::class, 'user_supervisors', 'supervisor_id', 'user_id')
+                    ->withPivot('is_active')
+                    ->withTimestamps();
     }
 
-    /**
-     * Check if user has a specific permission
-     */
-    public function hasPermission($permissionSlug)
+    public function requests()
     {
-        foreach ($this->roles as $role) {
-            if ($role->permissions()->where('slug', $permissionSlug)->exists()) {
-                return true;
-            }
-        }
-        return false;
+        return $this->belongsToMany(SystemRequest::class, 'user_requests', 'user_id', 'request_id')
+                    ->withPivot('is_active')
+                    ->withTimestamps();
     }
 
-    /**
-     * Get the user's institute
-     */
-    public function institute()
+    public function affiliations()
     {
-        return $this->belongsTo(Institute::class);
+        return $this->belongsToMany(Institute::class, 'user_affilation', 'user_id', 'institute_id')
+                    ->withPivot('category_id', 'is_active')
+                    ->withTimestamps();
+    }
+    
+    public function affiliatedCategories()
+    {
+        return $this->belongsToMany(Category::class, 'user_affilation', 'user_id', 'category_id')
+                    ->withPivot('institute_id', 'is_active')
+                    ->withTimestamps();
     }
 
-    /**
-     * Get the user's registration data
-     */
-    public function registrationData()
+    public function profile()
     {
-        return $this->hasOne(RegistrationData::class);
+        return $this->hasOne(UserProfile::class, 'user_id', 'user_id');
     }
 
-    /**
-     * Get the user's SSH keys
-     */
-    public function sshKeys()
+    public function qualifications()
     {
-        return $this->hasMany(SSHKey::class);
+        return $this->hasMany(UserQualification::class, 'user_id', 'user_id');
     }
 
-    /**
-     * Check if user is Super Admin
-     */
-    public function isSuperAdmin()
+    public function contacts()
     {
-        return $this->hasRole('super_admin');
+        return $this->hasMany(UserContact::class, 'user_id', 'user_id');
+    }
+
+    public function refreshTokens()
+    {
+        return $this->hasMany(RefreshToken::class, 'user_id', 'user_id');
     }
 }

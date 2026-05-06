@@ -1,14 +1,7 @@
 <?php
-// routes/web.php
 
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\PreRegisterController;
 
 Route::get('/', function () {
-    return view('welcome');
+    return response()->json(['message' => 'Welcome to the backend API']);
 });
-
-Route::get('/api/pre-register/verify', [PreRegisterController::class, 'verifyEmail'])
-    ->name('verify-email');
-
-

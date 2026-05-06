@@ -6,6 +6,7 @@ use App\Models\Continent;
 use App\Models\Country;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class LocationController extends Controller
 {
@@ -14,13 +15,20 @@ class LocationController extends Controller
      */
     public function getContinents(): JsonResponse
     {
-        $continents = Continent::active()
-            ->orderBy('name')
-            ->get(['id', 'name', 'code']);
+        Log::info('Accessing getContinents API');
+        try {
+            $continents = Continent::active()
+                ->orderBy('name')
+                ->get(['id', 'name', 'code']);
 
-        return response()->json([
-            'continents' => $continents
-        ]);
+            Log::info('Continents fetched successfully', ['count' => $continents->count()]);
+            // Return plain array
+            return response()->json($continents);
+        }
+        catch (\Exception $e) {
+            Log::error('Error fetching continents', ['message' => $e->getMessage()]);
+            return response()->json(['message' => 'Failed to fetch continents'], 500);
+        }
     }
 
     /**
@@ -28,73 +36,42 @@ class LocationController extends Controller
      */
     public function getCountriesByContinent(Request $request): JsonResponse
     {
-        $request->validate([
-            'continent_id' => 'required|exists:continents,id'
-        ]);
+        Log::info('Accessing getCountriesByContinent API', ['params' => $request->all()]);
 
-        $countries = Country::active()
-            ->where('continent_id', $request->continent_id)
-            ->orderBy('name')
-            ->get(['id', 'name', 'code', 'phone_code']);
+        try {
+            $request->validate([
+                'continent_id' => 'required|exists:continents,id'
+            ]);
 
-        return response()->json([
-            'countries' => $countries
-        ]);
-    }
+            $countries = Country::active()
+                ->where('continent_id', $request->continent_id)
+                ->orderBy('name')
+                ->get(['id', 'name', 'code', 'country_code']);
 
-    /**
-     * Get countries by continent name (legacy support)
-     */
-    public function getCountriesByContinentName(Request $request): JsonResponse
-    {
-        $request->validate([
-            'continent' => 'required|string'
-        ]);
+            Log::info('Countries fetched successfully', ['continent_id' => $request->continent_id, 'count' => $countries->count()]);
 
-        // Find continent by name
-        $continent = Continent::where('name', $request->continent)->first();
-
-        if (!$continent) {
-            return response()->json([
-                'message' => 'Continent not found',
-                'countries' => []
-            ], 404);
+            return response()->json($countries);
         }
-
-        $countries = Country::active()
-            ->where('continent_id', $continent->id)
-            ->orderBy('name')
-            ->get(['id', 'name', 'code', 'phone_code']);
-
-        return response()->json([
-            'countries' => $countries
-        ]);
+        catch (\Exception $e) {
+            Log::error('Error fetching countries', ['message' => $e->getMessage()]);
+            return response()->json(['message' => 'Failed to fetch countries'], 500);
+        }
     }
 
     /**
-     * Get a specific country
-     */
-    public function getCountry($id): JsonResponse
-    {
-        $country = Country::with('continent')->findOrFail($id);
-
-        return response()->json([
-            'country' => $country
-        ]);
-    }
-
-    /**
-     * Get all countries (for admin/management)
+     * Get all countries
      */
     public function getAllCountries(): JsonResponse
     {
-        $countries = Country::with('continent')
-            ->active()
-            ->orderBy('name')
-            ->get();
-
-        return response()->json([
-            'countries' => $countries
-        ]);
+        try {
+            $countries = Country::active()
+                ->orderBy('name')
+                ->get(['id', 'name', 'code', 'country_code']);
+            return response()->json($countries);
+        }
+        catch (\Exception $e) {
+            Log::error('Error fetching all countries', ['message' => $e->getMessage()]);
+            return response()->json(['message' => 'Failed to fetch countries'], 500);
+        }
     }
 }
