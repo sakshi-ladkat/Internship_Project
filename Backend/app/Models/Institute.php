@@ -12,10 +12,14 @@ class Institute extends Model
         'name',
         'code',
         'city',
-        'is_active'];
+        'is_active',
+        'ldap_dn',
+        'has_li_coordinator'
+    ];
 
     protected $casts = [
-        'is_active' => 'boolean'
+        'is_active' => 'boolean',
+        'has_li_coordinator' => 'boolean'
     ];
 
     /**

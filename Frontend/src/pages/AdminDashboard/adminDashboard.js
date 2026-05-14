@@ -35,7 +35,9 @@ export async function renderAdminDashboard(container) {
                 cachedRoles = (data.roles || []).map(r => r.slug);
                 localStorage.setItem('user_roles', JSON.stringify(cachedRoles));
             }
-        } catch (_) { }
+        } catch (err) {
+            if (err.message === 'AUTH_SESSION_EXPIRED') return;
+        }
     }
 
     if (!cachedRoles.includes('super_admin')) {
@@ -335,6 +337,7 @@ async function _loadApplications() {
         _initAppFilters();
         _initAppSearch();
     } catch (err) {
+        if (err.message === 'AUTH_SESSION_EXPIRED') return;
         tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:2rem;color:#ef4444;">${__esc(err.message)}</td></tr>`;
     }
 }
@@ -342,17 +345,23 @@ async function _loadApplications() {
 function _updateStats(stats) {
     const set = (id, v) => { const el = _app.querySelector(id); if (el) el.textContent = v ?? '0'; };
     set('#adm-stat-total', stats.total ?? _state.applications.length);
-    set('#adm-stat-pending', stats.pending ?? _state.applications.filter(a => !['approved', 'declined'].includes(a.status)).length);
+    set('#adm-stat-pending', stats.pending ?? _state.applications.filter(a => !['approved', 'declined', 'rejected'].includes(a.status)).length);
     set('#adm-stat-approved', stats.approved ?? _state.applications.filter(a => a.status === 'approved').length);
-    set('#adm-stat-declined', stats.declined ?? _state.applications.filter(a => a.status === 'declined').length);
+    set('#adm-stat-declined', stats.declined ?? _state.applications.filter(a => ['declined', 'rejected'].includes(a.status)).length);
 }
 
 function _applyFilterSearch() {
     let list = [..._state.applications];
     if (_state.currentFilter !== 'all') {
-        list = _state.currentFilter === 'pending'
-            ? list.filter(a => !['approved', 'declined'].includes(a.status))
-            : list.filter(a => a.status === _state.currentFilter);
+        if (_state.currentFilter === 'pending') {
+            list = list.filter(a => !['approved', 'declined', 'rejected', 'completed'].includes(a.status));
+        } else if (_state.currentFilter === 'declined') {
+            list = list.filter(a => ['declined', 'rejected'].includes(a.status));
+        } else if (_state.currentFilter === 'approved') {
+            list = list.filter(a => ['approved', 'active', 'completed'].includes(a.status));
+        } else {
+            list = list.filter(a => a.status === _state.currentFilter);
+        }
     }
     const q = _state.searchQuery.toLowerCase();
     if (q) list = list.filter(a =>
@@ -375,15 +384,22 @@ function _renderAppsTable() {
     }
 
     tbody.innerHTML = apps.map(a => {
-        const sc = {
-            approved: 'adm-pill-approved',
-            declined: 'adm-pill-declined',
-            registered: 'adm-pill-registered',
-            active: 'adm-pill-active',
-            pending: 'adm-pill-pending'
-        }[String(a.status).toLowerCase()] || 'adm-pill-default';
+        const status = String(a.status).toLowerCase();
+        let sc = 'adm-pill-default';
+        
+        if (status === 'registered' || status === 'submitted') {
+            sc = 'adm-pill-registered'; // Yellow
+        } else if (status.startsWith('approved_by_')) {
+            sc = 'adm-pill-approved-darker'; // Darker Yellow
+        } else if (status === 'approved' || status === 'active' || status === 'completed') {
+            sc = 'adm-pill-active'; // Green
+        } else if (status === 'declined' || status === 'rejected') {
+            sc = 'adm-pill-declined'; // Red
+        } else if (status === 'pending' || status === 'under_review') {
+            sc = 'adm-pill-pending';
+        }
         const sub = a.submitted_at ? new Date(a.submitted_at).toLocaleDateString('en-GB') : '—';
-        const pending = !['approved', 'declined'].includes(a.status);
+        const pending = !['approved', 'declined', 'rejected', 'completed'].includes(a.status);
         return `
         <tr>
             <td style="white-space:nowrap;">
@@ -398,7 +414,7 @@ function _renderAppsTable() {
             <td>${__esc(a.institute_name || '—')}</td>
             <td>${__esc(a.category_name || '—')}</td>
             <td>${sub}</td>
-            <td><span class="adm-pill ${sc}">${__esc(a.status || '—')}</span></td>
+            <td><span class="adm-pill ${sc}">${__esc(status === 'rejected' ? 'declined' : (a.status || '—'))}</span></td>
             <td>
                 <div class="adm-action-group">
                     <button class="adm-btn adm-btn-view adm-app-view"  data-id="${a.id}">View</button>
@@ -521,12 +537,23 @@ function _buildAppDetailHtml(a) {
         ['Current Status', __esc(a.current_status)],
         ['LIGO Member', __esc(a.ligo_member)],
         ['Duration', __esc(a.duration)],
-        ['Submitted', a.submitted_at ? new Date(a.submitted_at).toLocaleString('en-GB') : '—'],
+        ['Submitted', __formatDate(a.submitted_at)],
         ['Approved By', __esc(a.approved_by_name)],
-        ['Approved At', a.approved_at ? new Date(a.approved_at).toLocaleString('en-GB') : '—'],
+        ['Approved At', __formatDate(a.approved_at)],
     ].filter(([, v]) => v && v !== '—');
 
-    const sc = { approved: 'adm-pill-approved', declined: 'adm-pill-declined' }[a.status] || 'adm-pill-pending';
+    const status = String(a.status).toLowerCase();
+    let sc = 'adm-pill-pending';
+    
+    if (status === 'registered' || status === 'submitted') {
+        sc = 'adm-pill-registered';
+    } else if (status.startsWith('approved_by_')) {
+        sc = 'adm-pill-approved-darker';
+    } else if (status === 'approved' || status === 'active' || status === 'completed') {
+        sc = 'adm-pill-active';
+    } else if (status === 'declined' || status === 'rejected') {
+        sc = 'adm-pill-declined';
+    }
     return `
     <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1.5rem;">
         <div style="width:48px;height:48px;border-radius:50%;background:#eef2ff;display:flex;align-items:center;justify-content:center;font-size:1.3rem;font-weight:700;color:#6366f1;">
@@ -570,116 +597,115 @@ function _buildAppDetailHtml(a) {
     `;
 }
 
+function __formatDate(dateStr) {
+    if (!dateStr) return '—';
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return '—';
+    return date.toLocaleString('en-GB', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+    });
+}
+
 function _buildTrackHtml(app, steps, sshKey = null, userData = null) {
-    const header = `
-        <div style="margin-bottom:1.5rem;padding:1.25rem;background:#f8fafc;border-radius:0.75rem;border:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;">
-            <div>
-                <div style="font-weight:800;color:#0f172a;font-size:1rem;margin-bottom:0.25rem;">${__esc(app.applicant_name || '—')}</div>
-                <div style="font-family:monospace;font-size:0.8rem;color:#6366f1;font-weight:600;">ID: ${__esc(app.application_id || String(app.id))}</div>
-            </div>
-            <div class="adm-pill ${app.status === 'approved' ? 'adm-pill-approved' : 'adm-pill-pending'}">
-                ${__esc(app.status)}
-            </div>
-        </div>`;
+    const isCompleted = ['approved', 'completed', 'approved_by_li_coordinator'].includes(app.status);
+    const isRejected = app.status === 'rejected' || app.status === 'declined';
 
-    const submittedDate = app.submitted_at ? new Date(app.submitted_at).toLocaleString('en-GB') : 'Unknown';
-    const submittedStep = `
-        <div class="adm-tl-step">
-            <div class="adm-tl-dot done"><i data-feather="check"></i></div>
-            <div class="adm-tl-info">
-                <div class="adm-tl-label">Application Submitted</div>
-                <div class="adm-tl-meta">${submittedDate}</div>
-                <div class="adm-tl-remarks">Submission record created.</div>
-            </div>
-        </div>`;
+    const detailedItems = [
+        { label: 'Application Submitted', state: 'completed', description: 'Application submitted successfully.', date: app.submitted_at },
+        ...(steps || []).map(s => {
+            const isStepApproved = s.status === 'approved' || s.status === 'active' || s.status === 'completed';
+            const isStepRejected = s.status === 'rejected' || s.status === 'declined';
+            
+            let label = s.status_name;
+            if (isStepApproved) label = `Approved by ${s.role_name}`;
+            else if (isStepRejected) label = `Declined by ${s.role_name}`;
 
-    const workflowSteps = (steps || []).map(s => {
-        const isApproved = !!s.approved_at;
-        const isCurrent = !isApproved && app.current_step_id === s.workflow_step_id;
-        const isFuture = !isApproved && !isCurrent;
+            return {
+                label,
+                state: isStepApproved ? 'completed' : (isStepRejected ? 'rejected' : (app.current_step_id === s.workflow_step_id ? 'active' : 'pending')),
+                description: (isStepApproved || isStepRejected) 
+                    ? `${isStepApproved ? 'Approved' : 'Declined'} by ${__esc(s.approved_by_name || 'System')} on ${__formatDate(s.approved_at)}` 
+                    : 'Action required',
+                services: s.recommended_services,
+                remarks: s.comments
+            };
+        })
+    ];
 
-        const dotCls = isApproved ? 'done' : isCurrent ? '' : 'future';
-        const icon = isApproved ? 'check' : isCurrent ? 'clock' : 'circle';
-
-        const label = isApproved ? `Approved by ${s.role_name || 'Reviewer'}` : (isCurrent ? __esc(s.status_name) : __esc(s.status_name));
-
-        return `
-        <div class="adm-tl-step ${isFuture ? 'adm-tl-future' : ''}">
-            <div class="adm-tl-dot ${dotCls}"><i data-feather="${icon}"></i></div>
-            <div class="adm-tl-info">
-                <div class="adm-tl-label">${label}</div>
-                <div class="adm-tl-meta">
-                    ${isApproved ? `Approved by: ${__esc(s.approved_by_name || 'System')} on ${new Date(s.approved_at).toLocaleString('en-GB')}` : isCurrent ? 'Action required' : 'Next in sequence'}
-                </div>
-                ${isApproved ? `
-                <div class="adm-tl-remarks" style="margin-top:0.5rem; padding:0.5rem; background:#f1f5f9; border-radius:0.4rem; font-size:0.8rem;">
-                    <div style="margin-bottom:4px;"><strong>Recommended Services:</strong> ${__esc(s.recommended_services || 'None')}</div>
-                    <div><strong>Comments:</strong> ${__esc(s.comments || 'None')}</div>
-                </div>
-                ` : ''}
-            </div>
-        </div>`;
-    }).join('');
-
-    // --- Post-Approval Technical Steps ---
-    let technicalSteps = '';
-    const isFinalApproved = app.status === 'approved' || app.status === 'completed';
-
-    if (isFinalApproved) {
-        // LDAP / Account Step
-        const hasAccount = userData && userData.username;
-        const accountCls = hasAccount ? 'done' : '';
-        const accountIcon = hasAccount ? 'check' : 'clock';
-        const accountLabel = hasAccount ? 'Account Created (LDAP)' : 'Pending Account Creation';
-        const accountMeta = hasAccount ? `Username: ${__esc(userData.username)} | Status: ${__esc(userData.status)}` : 'Awaiting system synchronization';
-
-        technicalSteps += `
-        <div class="adm-tl-step">
-            <div class="adm-tl-dot ${accountCls}"><i data-feather="${accountIcon}"></i></div>
-            <div class="adm-tl-info">
-                <div class="adm-tl-label">${accountLabel}</div>
-                <div class="adm-tl-meta">${accountMeta}</div>
-            </div>
-        </div>`;
-
-        // SSH Step (only if computing services enabled)
-        if (app.computing_services) {
-            const hasSsh = !!sshKey;
-            const sshCls = hasSsh ? 'done' : '';
-            const sshIcon = hasSsh ? 'check' : 'user-plus';
-            const sshLabel = hasSsh ? 'SSH Key Uploaded' : 'Awaiting SSH Key Upload';
-            const sshMeta = hasSsh ? `Fingerprint: ${__esc(sshKey.fingerprint)}` : 'User must upload public key for HPC access';
-
-            technicalSteps += `
-            <div class="adm-tl-step">
-                <div class="adm-tl-dot ${sshCls}"><i data-feather="${sshIcon}"></i></div>
-                <div class="adm-tl-info">
-                    <div class="adm-tl-label">${sshLabel}</div>
-                    <div class="adm-tl-meta">${sshMeta}</div>
-                </div>
-            </div>`;
+    if (isCompleted) {
+        // Add SSH Step if key exists OR if computing services requested
+        if (sshKey || app.computing_services) {
+            detailedItems.push({ 
+                label: sshKey ? 'SSH Key Registered' : 'SSH Key Required', 
+                state: sshKey ? 'completed' : 'active', 
+                description: sshKey ? 'Applicant has a valid public key on file.' : 'Awaiting SSH key upload from applicant.' 
+            });
         }
 
-        // Final Activation Step
-        const isFullyActive = userData && userData.status === 'active';
-        const activeCls = isFullyActive ? 'done' : 'future';
-        const activeIcon = isFullyActive ? 'check' : 'activity';
-        technicalSteps += `
-        <div class="adm-tl-step">
-            <div class="adm-tl-dot ${activeCls}"><i data-feather="${activeIcon}"></i></div>
-            <div class="adm-tl-info">
-                <div class="adm-tl-label">Account Activated</div>
-                <div class="adm-tl-meta">${isFullyActive ? 'Researcher has full access to selected services.' : 'Final activation in progress.'}</div>
-            </div>
-        </div>`;
+        detailedItems.push({ 
+            label: userData?.username ? 'Account Created (LDAP)' : 'Account Provisioning', 
+            state: userData?.username ? 'completed' : (sshKey ? 'active' : 'pending'), 
+            description: userData?.username ? 'Identity provisioned in system.' : 'Setting up identity in LDAP...' 
+        });
+        detailedItems.push({ 
+            label: 'Account Activated', 
+            state: (isCompleted && userData?.status === 'active') ? 'completed' : 'pending',
+            description: (isCompleted && userData?.status === 'active') ? 'Full access granted.' : 'Final activation pending.'
+        });
     }
 
-    return `${header}
-    <div style="padding:0.5rem;">
-        <div class="adm-timeline">
-            ${submittedStep}
-            ${workflowSteps}
-            ${technicalSteps}
+    const buildStep = (it, i) => {
+        const isActive = it.state === 'active';
+        const isCompletedStep = it.state === 'completed';
+        return `
+        <div class="trk-step trk-step--${it.state} ${isActive ? 'open' : ''}" style="animation-delay:${i * 0.1}s">
+            <div class="trk-marker">
+                ${isCompletedStep ? '<i data-feather="check"></i>' : ''}
+                ${it.state === 'rejected' ? '<i data-feather="x" style="color:white;width:14px;height:14px;"></i>' : ''}
+                ${isActive ? `<div class="trk-marker-active"><div class="trk-marker-pulse"></div></div>` : ''}
+            </div>
+            <div class="trk-content-card">
+                <button class="trk-step-header-btn" onclick="this.closest('.trk-step').classList.toggle('open')">
+                    <div style="display:flex;align-items:center;gap:0.75rem;">
+                        <h4 class="trk-step-header-title">${__esc(it.label)}</h4>
+                        ${isActive ? `<span class="trk-badge-active-mini"><i data-feather="clock" style="width:10px;height:10px;margin-right:4px;"></i>In Progress</span>` : ''}
+                    </div>
+                    <i data-feather="chevron-down" class="trk-step-chevron"></i>
+                </button>
+                <div class="trk-step-body">
+                    <div style="font-size:0.9rem;color:#475569;margin-bottom:1rem;">${it.description || ''}</div>
+                    ${it.services ? `<div style="margin-bottom:1rem;padding:0.75rem;background:#f0f4ff;border-radius:8px;border-left:4px solid #6366f1;"><strong style="font-size:0.7rem;color:#6366f1;text-transform:uppercase;">Services:</strong><div style="font-weight:700;">${__esc(it.services)}</div></div>` : ''}
+                    ${it.remarks ? `<div style="padding:0.75rem;background:#f8fafc;border-radius:8px;font-style:italic;color:#64748b;font-size:0.85rem;">"${__esc(it.remarks)}"</div>` : ''}
+                </div>
+            </div>
+        </div>`;
+    };
+
+    const isFullyActive = isCompleted && userData?.status === 'active';
+    const activeStepLabel = detailedItems.find(it => it.state === 'active')?.label || 'In Progress';
+
+    return `
+    <div class="adm-track-wrap">
+        <div class="trk-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2.5rem;padding-bottom:1.5rem;border-bottom:1px solid #f1f5f9;">
+            <div style="display:flex;align-items:center;gap:1rem;">
+                <div style="background:#f8fafc;width:54px;height:54px;display:flex;align-items:center;justify-content:center;border-radius:12px;color:#6366f1;"><i data-feather="user"></i></div>
+                <div>
+                    <h3 style="margin:0;font-size:1.4rem;font-weight:800;color:#0f172a;">${__esc(app.applicant_name || 'Applicant')}</h3>
+                    <p style="margin:0.2rem 0 0;color:#64748b;font-size:0.85rem;">Tracking ID: ${__esc(app.application_id || String(app.id))}</p>
+                </div>
+            </div>
+            <div class="trk-overall-badge ${isFullyActive ? 'trk-badge-done' : isRejected ? 'trk-badge-error' : 'trk-badge-active'}" style="padding:0.6rem 1.5rem;border-radius:99px;font-weight:800;font-size:0.8rem;letter-spacing:0.02em;box-shadow:0 2px 10px rgba(0,0,0,0.03);display:flex;align-items:center;gap:0.5rem;">
+                ${isFullyActive ? '<i data-feather="check-circle"></i> Account Activated' : isRejected ? '<i data-feather="x-circle"></i> Declined' : `<i data-feather="clock"></i> ${activeStepLabel}`}
+            </div>
+        </div>
+        <div class="trk-timeline-container" style="position:relative;padding-left:10px;">
+            <div class="trk-timeline-line"></div>
+            <div class="trk-timeline-steps">${detailedItems.map((it, i) => buildStep(it, i)).join('')}</div>
         </div>
     </div>`;
 }
@@ -723,8 +749,8 @@ function _buildWorkflowCard(wf) {
             ${steps.slice(0, 3).map((s, i) => `
             <span style="font-size:0.68rem;font-weight:600;padding:0.15rem 0.5rem;border-radius:999px;
                   background:${s.is_final_step ? '#f0fdf4' : '#f1f5f9'};
-                  color:${s.is_final_step ? '#16a34a' : '#64748b'};">
-                ${i + 1}. ${__esc(s.role_name || s.status_name || '—')}
+                  color:${s.is_final_step ? '#16a34a' : '#64748b'}; border: 1px solid ${s.is_final_step ? '#dcfce7' : '#e2e8f0'};">
+                ${i + 1}. ${__esc(s.role_name || '—')} <span style="font-weight:400; opacity:0.8;">(${__esc(s.status_name || '—')})</span>
             </span>`).join('')}
             ${steps.length > 3 ? `<span style="font-size:0.68rem;color:#94a3b8;">+${steps.length - 3} more</span>` : ''}
         </div>
@@ -746,8 +772,14 @@ function _openWorkflowModal(wf) {
         <div class="adm-wf-step">
             <div class="adm-wf-step-dot ${isFinal ? 'final' : ''}">${isFinal ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' : i + 1}</div>
             <div class="adm-wf-step-info">
-                <div class="adm-wf-step-name">${__esc(s.status_name || `Step ${i + 1}`)}</div>
-                <div class="adm-wf-step-role">${__esc(s.role_name || 'No role assigned')}</div>
+                <div class="adm-wf-step-name">
+                    <span style="font-size:0.65rem; color:#94a3b8; text-transform:uppercase; display:block; margin-bottom:2px;">Status Name</span>
+                    ${__esc(s.status_name || `Step ${i + 1}`)}
+                </div>
+                <div class="adm-wf-step-role">
+                    <span style="font-size:0.65rem; color:#94a3b8; text-transform:uppercase; display:block; margin-bottom:2px;">Authorized Role</span>
+                    ${__esc(s.role_name || 'No role assigned')}
+                </div>
             </div>
             ${isFinal ? `<span class="adm-pill adm-pill-approved" style="align-self:center;margin-left:auto;">Final</span>` : ''}
         </div>`;
@@ -761,7 +793,7 @@ function _openWorkflowModal(wf) {
             <span style="font-size:0.75rem;font-weight:600;padding:0.2rem 0.65rem;border-radius:999px;
                   background:${s.is_final_step ? '#f0fdf4' : '#eef2ff'};
                   color:${s.is_final_step ? '#16a34a' : '#6366f1'};border:1px solid ${s.is_final_step ? '#86efac' : '#c7d2fe'};">
-                ${i + 1}. ${__esc(s.role_name || s.status_name)}
+                ${i + 1}. ${__esc(s.role_name || '—')} <span style="font-weight:400; font-size:0.7rem; opacity:0.8;">(${__esc(s.status_name || '—')})</span>
             </span>
             ${i < steps.length - 1 ? '<span style="color:#cbd5e1;font-size:0.9rem;">→</span>' : ''}`).join('')}
         </div>
@@ -1767,11 +1799,17 @@ function _initModals() {
 }
 
 function _showToast(msg, type = 'info') {
-    const c = _app.querySelector('#adm-toast-container') || document.querySelector('#adm-toast-container');
-    if (!c) return;
-    const t = document.createElement('div');
-    t.className = `adm-toast ${type}`; t.textContent = msg;
-    c.appendChild(t); setTimeout(() => t.remove(), 3500);
+    if (window.showToast) {
+        window.showToast(msg, type);
+    } else {
+        console.warn('[AdminDashboard] showToast not found, falling back to local fallback');
+        // Minimal fallback if global utils not loaded
+        const c = document.getElementById('adm-toast-container');
+        if (!c) return;
+        const t = document.createElement('div');
+        t.className = `adm-toast ${type}`; t.textContent = msg;
+        c.appendChild(t); setTimeout(() => t.remove(), 3500);
+    }
 }
 
 function __esc(s) {
@@ -2098,30 +2136,40 @@ async function _buildHierarchicalPageHtml(entity) {
                         </div>
                     </div>
                     <div id="c-wf-steps-container" style="grid-column: span 2; display: flex; flex-direction: column; gap: 1rem;">
-                        <div class="adm-wf-step-row" style="display: grid; grid-template-columns: 80px 1fr 1fr; gap: 10px; align-items: end; background: white; padding: 0.75rem; border: 1px solid #e2e8f0; border-radius: 8px;">
+                        <div class="adm-wf-step-row" style="display: grid; grid-template-columns: 70px 1.2fr 1fr 1fr 1.5fr; gap: 10px; align-items: end; background: white; padding: 0.75rem; border: 1px solid #e2e8f0; border-radius: 8px;">
                             <div class="adm-form-group" style="margin:0;">
                                 <label class="adm-label">Step ID</label>
                                 <input type="number" class="adm-input wf-step-no" value="1" />
                             </div>
                             <div class="adm-form-group" style="margin:0;">
-                                <label class="adm-label">Role in Step</label>
+                                <label class="adm-label">Role</label>
                                 <select class="adm-select wf-step-role"><option>Loading roles...</option></select>
                             </div>
                             <div class="adm-form-group" style="margin:0;">
-                                <label class="adm-label">Action Required</label>
-                                <select class="adm-select wf-step-action">
+                                <label class="adm-label">Action</label>
+                                <select class="adm-select wf-step-action" style="font-size:0.85rem;">
                                     <option value="recommend">Recommend</option>
                                     <option value="approve">Approve</option>
                                     <option value="approve_identity">Approve Identity</option>
                                 </select>
                             </div>
+                            <div class="adm-form-group" style="margin:0;">
+                                <label class="adm-label">Status Name</label>
+                                <input type="text" class="adm-input wf-step-status" placeholder="e.g. Awaiting..." />
+                            </div>
+                            <div class="adm-form-group" style="margin:0;">
+                                <label class="adm-label">Description</label>
+                                <input type="text" class="adm-input wf-step-desc" placeholder="Optional" />
+                            </div>
                         </div>
                     </div>
                 ` : ''}
+                ${entity !== 'workflows' ? `
                 <div class="adm-form-group" style="grid-column: span 2;">
-                    <label class="adm-label">${entity === 'workflows' ? 'Status Name (e.g. Awaiting Approval)' : subLabel + ' Name'}</label>
-                    <input type="text" id="c-name" placeholder="e.g. ${entity === 'workflows' ? 'Awaiting Review' : 'Sub ' + label}" />
+                    <label class="adm-label">${subLabel + ' Name'}</label>
+                    <input type="text" id="c-name" placeholder="e.g. Sub ${label}" />
                 </div>
+                ` : ''}
                 ${entity !== 'workflows' ? `
                     <div class="adm-form-group">
                         <label class="adm-label">${subLabel} Code</label>
@@ -2138,10 +2186,12 @@ async function _buildHierarchicalPageHtml(entity) {
                         <select id="c-sys-lead" class="adm-select"><option>Loading...</option></select>
                     </div>
                 ` : ''}
+                ${entity !== 'workflows' ? `
                 <div class="adm-form-group" style="grid-column: span 2;">
                     <label class="adm-label">Description (Optional)</label>
                     <textarea id="c-desc" rows="2" style="width:100%; padding:0.75rem; border:1px solid #e2e8f0; border-radius:8px;"></textarea>
                 </div>
+                ` : ''}
             </div>
 
             <div id="hier-create-fb" style="min-height:1.2rem; font-size:0.85rem; margin:1rem 0;"></div>
@@ -2186,22 +2236,30 @@ function _wireHierarchicalPage(container, entity) {
                 let html = '';
                 for (let i = 1; i <= count; i++) {
                     html += `
-                    <div class="adm-wf-step-row" style="display: grid; grid-template-columns: 80px 1fr 1fr; gap: 10px; align-items: end; background: white; padding: 0.75rem; border: 1px solid #e2e8f0; border-radius: 8px;">
+                    <div class="adm-wf-step-row" style="display: grid; grid-template-columns: 70px 1.2fr 1fr 1fr 1.5fr; gap: 10px; align-items: end; background: white; padding: 0.75rem; border: 1px solid #e2e8f0; border-radius: 8px;">
                         <div class="adm-form-group" style="margin:0;">
                             <label class="adm-label">Step ID</label>
                             <input type="number" class="adm-input wf-step-no" value="${i}" />
                         </div>
                         <div class="adm-form-group" style="margin:0;">
-                            <label class="adm-label">Role in Step</label>
+                            <label class="adm-label">Role</label>
                             <select class="adm-select wf-step-role">${rolesHtml}</select>
                         </div>
                         <div class="adm-form-group" style="margin:0;">
-                            <label class="adm-label">Action Required</label>
-                            <select class="adm-select wf-step-action">
+                            <label class="adm-label">Action</label>
+                            <select class="adm-select wf-step-action" style="font-size:0.85rem;">
                                 <option value="recommend">Recommend</option>
                                 <option value="approve">Approve</option>
                                 <option value="approve_identity">Approve Identity</option>
                             </select>
+                        </div>
+                        <div class="adm-form-group" style="margin:0;">
+                            <label class="adm-label">Status Name</label>
+                            <input type="text" class="adm-input wf-step-status" placeholder="e.g. Awaiting..." />
+                        </div>
+                        <div class="adm-form-group" style="margin:0;">
+                            <label class="adm-label">Description</label>
+                            <input type="text" class="adm-input wf-step-desc" placeholder="Optional" />
                         </div>
                     </div>`;
                 }
@@ -2258,6 +2316,7 @@ function _wireHierarchicalPage(container, entity) {
             if (entity === 'services') lookups.push(authFetch(API.ADMIN_DATA('subsystems')));
             else {
                 lookups.push(authFetch(API.ADMIN_DATA('institutes')));
+                // Initially load all users for leads, but we'll re-filter on change
                 lookups.push(authFetch(API.ADMIN_DATA('users')));
             }
 
@@ -2265,7 +2324,7 @@ function _wireHierarchicalPage(container, entity) {
             const parentData = await results[0].json();
             const childParentSelect = container.querySelector('#c-parent-id');
             if (childParentSelect) {
-                const opts = parentData.map(p => `<option value="${p.id}">${__esc(p.name)}</option>`).join('');
+                const opts = parentData.map(p => `<option value="${p.id}" data-inst-id="${p.institute_id || ''}">${__esc(p.name)}</option>`).join('');
                 childParentSelect.innerHTML = opts ? `<option value="">— Select ${label} —</option>` + opts : `<option value="">No ${label}s found</option>`;
             }
 
@@ -2286,24 +2345,56 @@ function _wireHierarchicalPage(container, entity) {
                 const userData = await results[2].json();
 
                 const selInst = container.querySelector('#p-sys-institute');
+                const selPLead = container.querySelector('#p-sys-lead');
+                const selCLead = container.querySelector('#c-sys-lead');
+
+                const populateLead = (selectEl, instId) => {
+                    if (!instId) {
+                        selectEl.innerHTML = '<option value="">— Select Parent First —</option>';
+                        return;
+                    }
+                    const filtered = userData.filter(u => !instId || String(u.institute_id) === String(instId) || u.institute_name?.includes(instData.find(i=>i.id == instId)?.name));
+                    // Note: Since userData from API might not have institute_id (it has institute_name), 
+                    // we might need to fetch fresh if filtering fails or rely on by-institute endpoint.
+                    // For now, let's use the by-institute endpoint for accuracy.
+                    _fetchAndPopulateLeads(selectEl, instId);
+                };
+
                 if (selInst) {
                     const opts = instData.map(i => `<option value="${i.id}">${__esc(i.name)}</option>`).join('');
                     selInst.innerHTML = opts ? `<option value="">— Select Institute —</option>` + opts : '<option value="">No institutes found</option>';
+                    selInst.onchange = () => _fetchAndPopulateLeads(selPLead, selInst.value);
                 }
 
-                const selPLead = container.querySelector('#p-sys-lead');
-                if (selPLead) {
-                    const opts = userData.map(u => `<option value="${u.id}">${__esc(u.name)} (${u.role_name})</option>`).join('');
-                    selPLead.innerHTML = opts ? `<option value="">— Select System Lead —</option>` + opts : '<option value="">No users found</option>';
+                if (childParentSelect && entity === 'systems') {
+                    childParentSelect.onchange = () => {
+                        const opt = childParentSelect.options[childParentSelect.selectedIndex];
+                        const instId = opt?.dataset.instId;
+                        _fetchAndPopulateLeads(selCLead, instId);
+                    };
                 }
 
-                const selCLead = container.querySelector('#c-sys-lead');
-                if (selCLead) {
-                    const opts = userData.map(u => `<option value="${u.id}">${__esc(u.name)} (${u.role_name})</option>`).join('');
-                    selCLead.innerHTML = opts ? `<option value="">— Select Sub-System Lead —</option>` + opts : '<option value="">No users found</option>';
-                }
+                // Initial population if values exist
+                if (selInst?.value) _fetchAndPopulateLeads(selPLead, selInst.value);
             }
         } catch (_) { }
+    };
+
+    const _fetchAndPopulateLeads = async (selectEl, instId) => {
+        if (!selectEl) return;
+        if (!instId) {
+            selectEl.innerHTML = '<option value="">— Select Parent First —</option>';
+            return;
+        }
+        selectEl.innerHTML = '<option value="">Loading users...</option>';
+        try {
+            const res = await authFetch(`${API.ADMIN_DATA('users')}?institute_id=${instId}`);
+            const users = await res.json();
+            const opts = users.map(u => `<option value="${u.id}">${__esc(u.name)} (${u.role_name || 'User'})</option>`).join('');
+            selectEl.innerHTML = opts ? `<option value="">— Select Lead —</option>` + opts : '<option value="">No users found in this institute</option>';
+        } catch(e) {
+            selectEl.innerHTML = '<option value="">Error loading users</option>';
+        }
     };
     loadDropdowns();
 
@@ -2337,10 +2428,12 @@ function _wireHierarchicalPage(container, entity) {
             } else {
                 const childEntity = entity === 'services' ? 'subservices' : (entity === 'workflows' ? 'workflow-steps' : 'subsystems');
                 url = `${BASE_URL}/api/auth/admin/${childEntity}`;
-                body = {
-                    name: container.querySelector('#c-name').value.trim(),
-                    description: container.querySelector('#c-desc')?.value.trim() || ''
-                };
+                if (entity !== 'workflows') {
+                    body = {
+                        name: container.querySelector('#c-name').value.trim(),
+                        description: container.querySelector('#c-desc')?.value.trim() || ''
+                    };
+                }
                 if (entity === 'workflows') {
                     const workflowId = container.querySelector('#c-parent-id').value;
                     if (!workflowId) throw new Error('Please select a Workflow.');
@@ -2353,7 +2446,8 @@ function _wireHierarchicalPage(container, entity) {
                             step_no: row.querySelector('.wf-step-no').value,
                             role_id: row.querySelector('.wf-step-role').value,
                             step_action: row.querySelector('.wf-step-action').value,
-                            status_name: container.querySelector('#c-name').value.trim() || 'Awaiting Review'
+                            status_name: row.querySelector('.wf-step-status').value.trim() || 'Awaiting Review',
+                            description: row.querySelector('.wf-step-desc').value.trim() || ''
                         });
                     });
                     
@@ -2395,8 +2489,15 @@ function _wireHierarchicalPage(container, entity) {
             fb.style.color = '#10b981'; fb.textContent = '✓ Saved successfully.';
 
             // Reset fields
-            const fields = mode === 'parent' ? ['#p-name', '#p-code', '#p-desc'] : ['#c-name', '#c-code', '#c-desc'];
-            fields.forEach(f => container.querySelector(f).value = '');
+            if (entity === 'workflows' && mode !== 'parent') {
+                container.querySelectorAll('.wf-step-status, .wf-step-desc').forEach(input => input.value = '');
+            } else {
+                const fields = mode === 'parent' ? ['#p-name', '#p-code', '#p-desc'] : ['#c-name', '#c-code', '#c-desc'];
+                fields.forEach(f => {
+                    const el = container.querySelector(f);
+                    if (el) el.value = '';
+                });
+            }
 
             loadList();
             loadDropdowns();

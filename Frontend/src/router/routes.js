@@ -11,15 +11,15 @@ export function router() {
   const app = document.getElementById('app');
   if (!app) return;
 
+  const fullHash = window.location.hash || '#/';
+  const [baseHash, queryStr] = fullHash.split('?');
 
-  let hash = window.location.hash;
-  if (!hash) {
+  if (!window.location.hash) {
     window.location.hash = '#/';
     return;
   }
 
-
-  if ((hash === '#/dashboard' || hash === '#/dashboard-profile' || hash === '#/admin') && !isLoggedIn()) {
+  if ((baseHash === '#/dashboard' || baseHash === '#/dashboard-profile' || baseHash === '#/admin') && !isLoggedIn()) {
     window.location.hash = '#/login';
     return;
   }
@@ -28,7 +28,7 @@ export function router() {
   const userRoles = JSON.parse(localStorage.getItem('user_roles') || '[]');
   const isSuperAdmin = userRoles.includes('super_admin');
 
-  if ((hash === '#/login' || hash === '#/otp') && isLoggedIn()) {
+  if ((baseHash === '#/login' || baseHash === '#/otp') && isLoggedIn()) {
     if (userStatus === 'onboarding') {
       window.location.hash = '#/registration';
     } else {
@@ -37,24 +37,25 @@ export function router() {
     return;
   }
 
-  if ((hash === '#/dashboard' || hash === '#/dashboard-profile') && isLoggedIn()) {
+  if ((baseHash === '#/dashboard' || baseHash === '#/dashboard-profile') && isLoggedIn()) {
     if (userStatus === 'onboarding') {
       window.location.hash = '#/registration';
       return;
     }
-    if (isSuperAdmin && hash !== '#/dashboard-profile') {
+    if (isSuperAdmin && baseHash !== '#/dashboard-profile') {
       window.location.hash = '#/admin';
       return;
     }
   }
 
-  if (hash === '#/registration') {
+  if (baseHash === '#/registration') {
     if (!isLoggedIn()) {
       window.location.hash = '#/login';
       return;
     }
-    // Allow reupload_required to access registration
-    if (userStatus === 'filled' || userStatus === 'completed' || userStatus === 'active') {
+    // Allow reupload_required/edit mode to access registration even if already "filled"
+    const isEditMode = queryStr && queryStr.includes('mode=edit');
+    if (!isEditMode && (userStatus === 'filled' || userStatus === 'completed' || userStatus === 'active')) {
       window.location.hash = isSuperAdmin ? '#/admin' : '#/dashboard';
       return;
     }
@@ -62,7 +63,7 @@ export function router() {
 
   app.innerHTML = '';
 
-  switch (hash) {
+  switch (baseHash) {
     case '#/':
       renderHome(app);
       break;
@@ -77,7 +78,7 @@ export function router() {
 
     case '#/dashboard':
     case '#/dashboard-profile':
-      renderDashboard(app, hash === '#/dashboard-profile');
+      renderDashboard(app, baseHash === '#/dashboard-profile');
       break;
 
     case '#/registration':
@@ -90,6 +91,13 @@ export function router() {
       break;
 
     default:
-      app.innerHTML = `<h1>404 - Page Not Found</h1>`;
+      app.innerHTML = `<div style="padding: 40px; text-align:center;"><h1>404 - Page Not Found</h1><p>Route: ${escHtml(baseHash)}</p><a href="#/">Back to Home</a></div>`;
   }
+}
+
+function escHtml(str) {
+  if (!str) return '';
+  return str.replace(/[&<>"']/g, function(m) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m];
+  });
 }

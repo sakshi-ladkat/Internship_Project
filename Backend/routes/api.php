@@ -30,6 +30,7 @@ Route::prefix('reference')
         Route::get('/supervisors', [ReferenceController::class, 'getSupervisors']);
         Route::get('/titles', [ReferenceController::class, 'getTitles']);
         Route::get('/subsystems', [ReferenceController::class, 'getSubsystems']);
+        Route::get('/durations', [ReferenceController::class, 'getDurations']);
     });
 
 // ── Public auth routes ────────────────────────────────────────────────────
@@ -46,6 +47,7 @@ Route::prefix('auth')->group(function () {
             Route::patch('/profile', [AuthController::class , 'updateFullProfile']);
             Route::post('/qualification', [AuthController::class , 'addQualification']);
             Route::post('/registration', [RegistrationController::class , 'submit']);
+            Route::post('/applications/{id}/reupload-id-card', [RegistrationController::class , 'reuploadIdCard']);
             Route::get('/applications/pending-with-reminders', [WorkflowController::class, 'pendingWithReminders']);
 
             // SSH Key Management
@@ -65,6 +67,7 @@ Route::prefix('auth')->group(function () {
                 // Modal data endpoints
                 Route::get('/services',                    [ServiceController::class, 'servicesWithSubservices']);
                 Route::get('/staff/{roleSlug}',            [WorkflowController::class, 'staffByRole']);
+                Route::get('/staff/subsystem/{subsystemId}', [WorkflowController::class, 'staffBySubsystem']);
                 Route::get('/applicant/{userId}',          [WorkflowController::class, 'applicantProfile']);
             });
 

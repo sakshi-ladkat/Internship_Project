@@ -94,10 +94,9 @@ class AdminController extends Controller
 
         $stats = [
             'total' => $apps->count(),
-            'pending' => $apps->where('status', 'pending')->count()
-                + $apps->whereNotIn('status', ['approved', 'declined', 'pending'])->count(),
-            'approved' => $apps->where('status', 'approved')->count(),
-            'declined' => $apps->where('status', 'declined')->count(),
+            'pending' => $apps->whereNotIn('status', ['approved', 'declined', 'rejected', 'completed'])->count(),
+            'approved' => $apps->whereIn('status', ['approved', 'active', 'completed'])->count(),
+            'declined' => $apps->whereIn('status', ['declined', 'rejected'])->count(),
         ];
 
         return response()->json(['applications' => $apps, 'stats' => $stats]);
@@ -249,7 +248,7 @@ class AdminController extends Controller
         if ($err = $this->checkAdmin($request))
             return $err;
 
-        $active = DB::table('institutes')->whereIn('status', ['approved', 'inactive'])->orderBy('name')->get();
+        $active = DB::table('institutes')->whereIn('status', ['approved', 'active', 'inactive'])->orderBy('name')->get();
         $pending = DB::table('institutes')->where('status', 'pending')->orderBy('created_at', 'desc')->get();
 
         return response()->json(['active' => $active, 'pending' => $pending]);

@@ -11,3 +11,5 @@ use Illuminate\Support\Facades\Schedule;
 use App\Jobs\SendReminderJob;
 
 Schedule::job(new SendReminderJob)->hourly();
+Schedule::command('app:process-ldap-provisioning')->daily();
+Schedule::command('app:decline-inactive-corrections')->hourly();

@@ -93,13 +93,13 @@ export async function authFetch(url, options = {}) {
 
     let res = await fetch(url, mergedOptions);
 
-    // If unauthorised, try to refresh the access token once
-    if (res.status === 401) {
+    // If unauthorised or user not found (stale session after migration), try to refresh or logout
+    if (res.status === 401 || res.status === 404) {
         const refreshed = await tryRefresh();
 
         if (!refreshed) {
             logout();
-            return res;
+            throw new Error('AUTH_SESSION_EXPIRED');
         }
 
         // Retry original request with the new access token

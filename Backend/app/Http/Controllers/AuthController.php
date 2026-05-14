@@ -177,19 +177,52 @@ class AuthController extends Controller
         $contact = \Illuminate\Support\Facades\DB::table('user_contacts')
             ->where('user_id', $userId)->first();
 
+        $affiliation = \Illuminate\Support\Facades\DB::table('user_affilation as ua')
+            ->leftJoin('institutes as i', 'ua.institute_id', '=', 'i.id')
+            ->where('ua.user_id', $userId)
+            ->select('ua.*', 'i.name as institute_name', 'i.code as institute_code')
+            ->first();
+
         $application = \Illuminate\Support\Facades\DB::table('applications')
             ->where('user_id', $userId)
+            ->orderByDesc('created_at')
             ->first();
 
         $canSetupSsh = false;
         if ($application) {
-            $canSetupSsh = \Illuminate\Support\Facades\DB::table('application_approvals as aa')
-                ->join('workflow_steps as ws', 'aa.workflow_step_id', '=', 'ws.workflow_step_id')
-                ->join('roles as r', 'ws.role_id', '=', 'r.id')
-                ->where('aa.application_id', $application->id)
-                ->where('r.slug', 'li_coordinator')
-                ->where('aa.status', 'approved')
+            $hasKey = \Illuminate\Support\Facades\DB::table('ssh_keys')
+                ->where('user_id', $userId)
+                ->where('status', 'active')
                 ->exists();
+
+            if (!$hasKey) {
+                // Check if any approval step has computing services recommended
+                $hasComputingRecommendation = false;
+                $approvals = \Illuminate\Support\Facades\DB::table('application_approvals')
+                    ->where('application_id', $application->id)
+                    ->whereNotNull('recommended_services')
+                    ->get();
+
+                foreach ($approvals as $appr) {
+                    $rs = json_decode($appr->recommended_services, true);
+                    if (!empty($rs['service_ids'])) {
+                        $isComputingSvc = \Illuminate\Support\Facades\DB::table('services')
+                            ->whereIn('id', $rs['service_ids'])
+                            ->where('is_computing', true)
+                            ->exists();
+                        if ($isComputingSvc) {
+                            $hasComputingRecommendation = true;
+                            break;
+                        }
+                    }
+                }
+
+                $isPostApproval = in_array($application->status, ['approved', 'completed', 'approved_by_li_coordinator', 'provisioning_pending']);
+                $isComputing = $application->computing_services || $hasComputingRecommendation;
+
+                // Show SSH setup ONLY if computing is involved AND it's past LI-coordinator approval
+                $canSetupSsh = $isComputing && $isPostApproval;
+            }
         }
 
         return response()->json([
@@ -197,6 +230,7 @@ class AuthController extends Controller
             'profile'        => $user->profile,
             'qualifications' => $qualifications,
             'contact'        => $contact,
+            'affiliation'    => $affiliation,
             'roles'          => $roles,
             'permissions'    => $permissions,
             'can_setup_ssh'  => $canSetupSsh,

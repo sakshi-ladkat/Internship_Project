@@ -29,6 +29,8 @@ export const API = {
     REVIEW_STAFF: (slug) => `${BASE_URL}/api/auth/review/staff/${slug}`,
     APPLICANT_PROFILE: (uid) => `${BASE_URL}/api/auth/review/applicant/${uid}`,
     REFERENCE_SUBSYSTEMS: `${BASE_URL}/api/reference/subsystems`,
+    REFERENCE_TITLES:     `${BASE_URL}/api/reference/titles`,
+    REFERENCE_DURATIONS:  `${BASE_URL}/api/reference/durations`,
 
     // ── Admin ────────────────────────────────────────────────────────────────
     ADMIN_APPLICATIONS:          `${BASE_URL}/api/auth/admin/applications`,
@@ -42,6 +44,9 @@ export const API = {
     ADMIN_ASSIGN_ROLE:           `${BASE_URL}/api/auth/admin/users/assign-role`,
     ADMIN_DATA:    (entity)   => `${BASE_URL}/api/auth/admin/data/${entity}`,
     ADMIN_WORKFLOWS_FULL:       `${BASE_URL}/api/auth/admin/workflows-full`,
+
+    // ── SSH Key ─────────────────────────────────────────────────────────────
+    SSH_KEY_STORE:              `${BASE_URL}/api/auth/ssh-key`,
 
     // ── Helper to build arbitrary URLs ─────────────────────────────────────
     url: (path) => `${BASE_URL}${path}`,

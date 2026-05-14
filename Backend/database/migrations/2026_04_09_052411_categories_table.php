@@ -25,6 +25,14 @@ return new class extends Migration {
             $table->timestamps();
         });
 
+        // Insert Parent Categories
+        DB::table('categories')->insert([
+            ['id' => 1, 'name' => 'Student', 'slug' => 'student', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 2, 'name' => 'Faculty', 'slug' => 'faculty', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 3, 'name' => 'Researcher / Scientist', 'slug' => 'researcher-scientist', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 4, 'name' => 'Staff', 'slug' => 'staff', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
         Schema::create('user_affilation', function (Blueprint $table) {
             $table->foreignUlid('user_id')
                 ->references('user_id')->on('users')
