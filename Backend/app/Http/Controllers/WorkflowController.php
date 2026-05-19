@@ -1250,10 +1250,39 @@ class WorkflowController extends Controller
             return $step;
         });
 
+        $history = \DB::table('applications as app')
+            ->join('workflows as wf', 'app.workflow_id', '=', 'wf.workflow_id')
+            ->join('requests as req', 'app.request_id', '=', 'req.id')
+            ->leftJoin('users as urej', 'app.rejected_by', '=', 'urej.user_id')
+            ->leftJoin('user_profiles as uprej', 'urej.user_id', '=', 'uprej.user_id')
+            ->where('app.user_id', $app->user_id)
+            ->orderByDesc('app.created_at')
+            ->select([
+                'app.id',
+                'app.application_id',
+                'app.status',
+                'app.created_at as submitted_at',
+                'app.updated_at',
+                'app.reapplied_from',
+                'app.parent_application_id',
+                'app.declined_reason',
+                'app.rejection_reason',
+                'wf.workflow_name',
+                'req.name as request_name',
+                \DB::raw("COALESCE(CONCAT(uprej.first_name, ' ', uprej.last_name), urej.email) as rejected_by_name"),
+            ])
+            ->get()
+            ->map(function ($hApp) {
+                $hApp->submitted_at = $hApp->submitted_at ? \Carbon\Carbon::parse($hApp->submitted_at)->toIso8601String() : null;
+                $hApp->updated_at = $hApp->updated_at ? \Carbon\Carbon::parse($hApp->updated_at)->toIso8601String() : null;
+                return $hApp;
+            });
+
         return response()->json([
             'application' => $app,
             'steps' => $mappedSteps,
             'ssh_key' => $sshKey,
+            'history' => $history,
         ]);
     }
 

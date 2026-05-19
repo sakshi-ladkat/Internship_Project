@@ -126,19 +126,36 @@ function _ensureModal() {
 
                     <!-- LIGO Member toggle -->
                     <div class="rm-field-group" id="rm-ligo-group">
-                        <label class="rm-label">Is the applicant an official LIGO Member?</label>
-                        <div style="display:flex; align-items:center; gap:1rem;">
-                            <div class="rm-radio-group">
-                                <label class="rm-radio-label">
-                                    <input type="radio" name="ligo_member" id="ligo-yes" value="yes">
-                                    <span class="rm-radio-chip">Yes</span>
-                                </label>
-                                <label class="rm-radio-label">
-                                    <input type="radio" name="ligo_member" id="ligo-no" value="no" checked>
-                                    <span class="rm-radio-chip">No</span>
-                                </label>
+                        <div style="display:flex; flex-direction:column; gap:0.75rem;">
+                            <div>
+                                <label class="rm-label">Is the applicant an official LIGO-US Member?</label>
+                                <div class="rm-radio-group" style="margin-top: 0.25rem;">
+                                    <label class="rm-radio-label">
+                                        <input type="radio" name="ligo_us_member" value="yes">
+                                        <span class="rm-radio-chip">Yes</span>
+                                    </label>
+                                    <label class="rm-radio-label">
+                                        <input type="radio" name="ligo_us_member" value="no" checked>
+                                        <span class="rm-radio-chip">No</span>
+                                    </label>
+                                </div>
                             </div>
-                            <button id="rm-ligo-confirm-btn" class="btn" style="background:#6366f1; color:white; border:none; padding:0.5rem 1rem; border-radius:0.5rem; font-weight:700; font-size:0.8rem; cursor:pointer; box-shadow:0 2px 8px rgba(99,102,241,0.2); transition:all 0.2s; white-space:nowrap;">Confirm Status</button>
+                            <div>
+                                <label class="rm-label">Is the applicant an official LIGO-India Member?</label>
+                                <div class="rm-radio-group" style="margin-top: 0.25rem;">
+                                    <label class="rm-radio-label">
+                                        <input type="radio" name="ligo_india_member" value="yes">
+                                        <span class="rm-radio-chip">Yes</span>
+                                    </label>
+                                    <label class="rm-radio-label">
+                                        <input type="radio" name="ligo_india_member" value="no" checked>
+                                        <span class="rm-radio-chip">No</span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div style="margin-top: 0.75rem; display: flex; justify-content: flex-end;">
+                                <button id="rm-ligo-confirm-btn" class="btn" style="background:#6366f1; color:white; border:none; padding:0.5rem 1.25rem; border-radius:0.5rem; font-weight:700; font-size:0.8rem; cursor:pointer; box-shadow:0 2px 8px rgba(99,102,241,0.2); transition:all 0.2s; white-space:nowrap;">Confirm Membership</button>
+                            </div>
                         </div>
                     </div>
 
@@ -379,8 +396,11 @@ function _ensureModal() {
 
     // Wire Ligo Member status change
     _modal.querySelector('#rm-ligo-confirm-btn').addEventListener('click', (e) => {
-        const val = _modal.querySelector('input[name="ligo_member"]:checked')?.value;
-        _handleLigoConfirm(val, e.target);
+        const usVal = _modal.querySelector('input[name="ligo_us_member"]:checked')?.value;
+        const indiaVal = _modal.querySelector('input[name="ligo_india_member"]:checked')?.value;
+        const finalLigo = (usVal === 'yes' || indiaVal === 'yes') ? 'yes' : 'no';
+        _reviewState[_currentApp.id].ligo_member = finalLigo;
+        _handleLigoConfirm(finalLigo, e.target);
     });
 }
 
@@ -422,32 +442,53 @@ async function _loadModalData(app) {
     } else {
         // Restore standard radio buttons for supervisor
         ligoGroup.innerHTML = `
-            <label class="rm-label">Is the applicant an official LIGO Member?</label>
-            <div style="display:flex; align-items:center; gap:1rem; margin-top: 0.5rem;">
-                <div class="rm-radio-group">
-                    <label class="rm-radio-label">
-                        <input type="radio" name="ligo_member" id="ligo-yes" value="yes" ${state.ligo_member === 'yes' ? 'checked' : ''}>
-                        <span class="rm-radio-chip">Yes</span>
-                    </label>
-                    <label class="rm-radio-label">
-                        <input type="radio" name="ligo_member" id="ligo-no" value="no" ${state.ligo_member === 'no' ? 'checked' : ''}>
-                        <span class="rm-radio-chip">No</span>
-                    </label>
+            <div style="display:flex; flex-direction:column; gap:0.75rem;">
+                <div>
+                    <label class="rm-label">Is the applicant an official LIGO-US Member?</label>
+                    <div class="rm-radio-group" style="margin-top: 0.25rem;">
+                        <label class="rm-radio-label">
+                            <input type="radio" name="ligo_us_member" value="yes" ${state.ligo_us === 'yes' ? 'checked' : ''}>
+                            <span class="rm-radio-chip">Yes</span>
+                        </label>
+                        <label class="rm-radio-label">
+                            <input type="radio" name="ligo_us_member" value="no" ${state.ligo_us !== 'yes' ? 'checked' : ''}>
+                            <span class="rm-radio-chip">No</span>
+                        </label>
+                    </div>
                 </div>
-                <button id="rm-ligo-confirm-btn" class="btn" style="background:#6366f1; color:white; border:none; padding:0.5rem 1rem; border-radius:0.5rem; font-weight:700; font-size:0.8rem; cursor:pointer; box-shadow:0 2px 8px rgba(99,102,241,0.2); transition:all 0.2s; white-space:nowrap;">Confirm Status</button>
+                <div>
+                    <label class="rm-label">Is the applicant an official LIGO-India Member?</label>
+                    <div class="rm-radio-group" style="margin-top: 0.25rem;">
+                        <label class="rm-radio-label">
+                            <input type="radio" name="ligo_india_member" value="yes" ${state.ligo_india === 'yes' ? 'checked' : ''}>
+                            <span class="rm-radio-chip">Yes</span>
+                        </label>
+                        <label class="rm-radio-label">
+                            <input type="radio" name="ligo_india_member" value="no" ${state.ligo_india !== 'yes' ? 'checked' : ''}>
+                            <span class="rm-radio-chip">No</span>
+                        </label>
+                    </div>
+                </div>
+                <div style="margin-top: 0.75rem; display: flex; justify-content: flex-end;">
+                    <button id="rm-ligo-confirm-btn" class="btn" style="background:#6366f1; color:white; border:none; padding:0.5rem 1.25rem; border-radius:0.5rem; font-weight:700; font-size:0.8rem; cursor:pointer; box-shadow:0 2px 8px rgba(99,102,241,0.2); transition:all 0.2s; white-space:nowrap;">Confirm Membership</button>
+                </div>
             </div>
         `;
 
         // RE-WIRE the button and add state update on change
-        ligoGroup.querySelectorAll('input[name="ligo_member"]').forEach(radio => {
+        ligoGroup.querySelectorAll('input[type="radio"]').forEach(radio => {
             radio.addEventListener('change', (e) => {
-                _reviewState[app.id].ligo_member = e.target.value;
+                if (e.target.name === 'ligo_us_member') _reviewState[app.id].ligo_us = e.target.value;
+                if (e.target.name === 'ligo_india_member') _reviewState[app.id].ligo_india = e.target.value;
             });
         });
 
         ligoGroup.querySelector('#rm-ligo-confirm-btn').addEventListener('click', (e) => {
-            const val = ligoGroup.querySelector('input[name="ligo_member"]:checked')?.value;
-            _handleLigoConfirm(val, e.target);
+            const usVal = ligoGroup.querySelector('input[name="ligo_us_member"]:checked')?.value;
+            const indiaVal = ligoGroup.querySelector('input[name="ligo_india_member"]:checked')?.value;
+            const finalLigo = (usVal === 'yes' || indiaVal === 'yes') ? 'yes' : 'no';
+            _reviewState[app.id].ligo_member = finalLigo;
+            _handleLigoConfirm(finalLigo, e.target);
         });
     }
 
@@ -1967,7 +2008,7 @@ function _handleLigoConfirm(val, btn) {
         return;
     }
 
-    const radios = _modal.querySelectorAll('input[name="ligo_member"]');
+    const radios = _modal.querySelectorAll('input[name="ligo_member"], input[name="ligo_us_member"], input[name="ligo_india_member"]');
     const subSelect = _modal.querySelector('#rm-subsystem');
 
     // Save to state so _submitDecision validation passes
@@ -1976,8 +2017,8 @@ function _handleLigoConfirm(val, btn) {
     }
 
     // 1. Hard Lock the UI group and button
-    const group = _modal.querySelector('.rm-radio-group');
-    if (group) group.classList.add('rm-radio-group--locked');
+    const groups = _modal.querySelectorAll('.rm-radio-group');
+    if (groups) groups.forEach(g => g.classList.add('rm-radio-group--locked'));
     radios.forEach(r => r.disabled = true);
 
     btn.disabled = true;
@@ -2032,15 +2073,14 @@ function escHtml(str) {
 function _applyServiceFilters() {
     const state = _currentApp ? _reviewState[_currentApp.id] : null;
 
-    // 1. Determine LIGO Status (Priority: Radio Check > DB Status)
-    // Use Array.find to handle disabled radios reliably across browsers
-    const allLigoRadios = [..._modal.querySelectorAll('input[name="ligo_member"]')];
-    const ligoRadioChecked = allLigoRadios.find(r => r.type === 'radio' && r.checked);
+    // 1. Determine LIGO Status (Priority: State > DB Status)
+    const stateLigo = state?.ligo_member;
     const dbLigo = _currentApp?.ligo_member;
     const hasDbLigo = dbLigo && dbLigo !== 'pending' && dbLigo !== 'unknown' && dbLigo !== '';
 
-    const isLigoConfirmed = !!(ligoRadioChecked || hasDbLigo);
-    const isLigo = ligoRadioChecked ? (ligoRadioChecked.value === 'yes') : (dbLigo === 'yes');
+    // Consider LIGO confirmed if we have a valid state value OR it's from DB
+    const isLigoConfirmed = !!(stateLigo || hasDbLigo);
+    const isLigo = stateLigo ? (stateLigo === 'yes') : (dbLigo === 'yes');
 
     // 2. Determine Subsystem (Priority: Dropdown > State > DB)
     const subSelect = _modal.querySelector('#rm-subsystem');
@@ -2148,7 +2188,7 @@ function _showDecisionPanel(action) {
     confirmBtn.style.opacity = '1';
     confirmBtn.style.cursor = 'pointer';
 
-    const declineReasons = ["Invalid Institutional Affiliation", "Duplicate Application", "Incomplete/Invalid Documents"];
+    const declineReasons = ["Invalid Institutional Affiliation", "Duplicate Application", "Incomplete/Invalid Documents", "Other"];
 
     if (action === 'correction') {
         checkboxesContainer.innerHTML = `
@@ -2162,10 +2202,27 @@ function _showDecisionPanel(action) {
                 <input type="radio" name="rejection_reason" value="${r}"> ${r}
             </label>
         `).join('');
+
+        // Wire dynamic feedback placeholder and style updates
+        setTimeout(() => {
+            checkboxesContainer.querySelectorAll('input[name="rejection_reason"]').forEach(input => {
+                input.addEventListener('change', () => {
+                    if (input.value === 'Other') {
+                        remarks.placeholder = 'Please specify the exact reason here... (Required)';
+                        remarks.focus();
+                    } else {
+                        remarks.placeholder = 'Add any optional comments or additional details here...';
+                    }
+                });
+            });
+        }, 0);
     }
 
     // Clear previous data when switching
     remarks.value = '';
+    remarks.placeholder = action === 'correction' 
+        ? 'Please specify what the applicant needs to correct...'
+        : 'Add any optional comments or additional details here...';
 
     if (action === 'correction') {
         title.textContent = 'Send Back for Valid ID Card?';
@@ -2222,11 +2279,17 @@ async function _handleDecisionConfirm() {
             return;
         }
 
+        if (selectedReason === 'Other' && !remarks) {
+            _showFeedback('Please specify the reason in the remarks/comment box.', 'error');
+            _modal.querySelector('#rm-remarks').focus();
+            return;
+        }
+
         confirmBtn.disabled = true;
         confirmBtn.textContent = 'Submitting...';
 
         // Sync formatted remarks to state so _submitDecision picks them up
-        const finalRemarks = selectedReason + (remarks ? ' - ' + remarks : '');
+        const finalRemarks = selectedReason === 'Other' ? remarks : selectedReason + (remarks ? ' - ' + remarks : '');
         _reviewState[_currentApp.id].remarks = finalRemarks.trim();
         _modal.querySelector('#rm-remarks').value = finalRemarks.trim();
 

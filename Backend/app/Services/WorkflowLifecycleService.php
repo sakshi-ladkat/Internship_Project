@@ -88,9 +88,10 @@ class WorkflowLifecycleService
             DB::table('applications')
                 ->where('id', $applicationId)
                 ->update([
-                    'status' => 'rejected',
+                    'status' => 'declined',
                     'rejection_type' => 'final',
                     'rejection_reason' => $remarks,
+                    'declined_reason' => $remarks,
                     'rejected_by' => $actedBy,
                     'rejected_at' => now(),
                     'is_active' => false,
@@ -424,7 +425,7 @@ class WorkflowLifecycleService
 
         $activeApp = DB::table('applications')
             ->where('user_id', $userId)
-            ->whereIn('status', ['submitted', 'under_review', 'correction_required', 'resubmitted'])
+            ->whereIn('status', ['submitted', 'under_review', 'correction_required', 'resubmitted', 'pending', 'approved_processing'])
             ->exists();
 
         if ($activeApp) {

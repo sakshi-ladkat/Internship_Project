@@ -16,6 +16,8 @@ const _state = {
     applications: [],
     currentFilter: 'all',
     searchQuery: '',
+    cachedInstitutesList: null,
+    cachedRolesList: null,
 };
 
 let _app = null;
@@ -264,8 +266,9 @@ function _buildShell() {
                         <label>City</label>
                         <input type="text" name="city" required />
                     </div>
+                    <div id="adm-inst-edit-audit" style="display:none; padding:10px 14px; background:#f1f5f9; border-radius:8px; font-size:0.75rem; color:#475569; border-left:4px solid #6366f1; margin-top:0.5rem; flex-direction:column; gap:4px;"></div>
                     <div style="margin-top:1.5rem;display:flex;gap:0.75rem;">
-                        <button type="submit" class="adm-btn adm-btn-success" style="flex:1;">Approve & Save</button>
+                        <button type="submit" id="adm-inst-edit-submit" class="adm-btn adm-btn-success" style="flex:1;">Approve & Save</button>
                         <button type="button" class="adm-btn adm-btn-secondary fac-modal-cancel" id="adm-inst-edit-cancel">Cancel</button>
                     </div>
                 </form>
@@ -386,7 +389,7 @@ function _renderAppsTable() {
     tbody.innerHTML = apps.map(a => {
         const status = String(a.status).toLowerCase();
         let sc = 'adm-pill-default';
-        
+
         if (status === 'registered' || status === 'submitted') {
             sc = 'adm-pill-registered'; // Yellow
         } else if (status.startsWith('approved_by_')) {
@@ -416,14 +419,20 @@ function _renderAppsTable() {
             <td>${sub}</td>
             <td><span class="adm-pill ${sc}">${__esc(status === 'rejected' ? 'declined' : (a.status || '—'))}</span></td>
             <td>
-                <div class="adm-action-group">
-                    <button class="adm-btn adm-btn-view adm-app-view"  data-id="${a.id}">View</button>
+                <div class="adm-action-group" style="display: flex; gap: 8px; align-items: center;">
+                    <button class="adm-btn adm-app-view" data-id="${a.id}" style="display: inline-flex; align-items: center; justify-content: center; gap: 6px; background: linear-gradient(135deg, #6366f1, #4f46e5); color: #ffffff !important; border: none; padding: 0.45rem 0.85rem; border-radius: 0.375rem; font-size: 0.8rem; font-weight: 700; cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 4px rgba(99, 102, 241, 0.2);" onmouseover="this.style.transform='translateY(-1px)'; this.style.boxShadow='0 4px 8px rgba(99, 102, 241, 0.3)';" onmouseout="this.style.transform='none'; this.style.boxShadow='0 2px 4px rgba(99, 102, 241, 0.2)';">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events: none;"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>View
+                    </button>
+                    <button class="adm-btn adm-app-track" data-id="${a.id}" style="display: inline-flex; align-items: center; justify-content: center; gap: 6px; background: white; color: #4f46e5; border: 1.5px solid #e2e8f0; padding: 0.45rem 0.85rem; border-radius: 0.375rem; font-size: 0.8rem; font-weight: 700; cursor: pointer; transition: all 0.2s; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);" onmouseover="this.style.background='#f8fafc'; this.style.borderColor='#cbd5e1'; this.style.transform='translateY(-1px)';" onmouseout="this.style.background='white'; this.style.borderColor='#e2e8f0'; this.style.transform='none';">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events: none;"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>Track
+                    </button>
                 </div>
             </td>
         </tr>`;
     }).join('');
 
     tbody.querySelectorAll('.adm-app-view').forEach(btn => btn.addEventListener('click', () => _openAppDetail(Number(btn.dataset.id), 'detail')));
+    tbody.querySelectorAll('.adm-app-track').forEach(btn => btn.addEventListener('click', () => _openAppDetail(Number(btn.dataset.id), 'track')));
     feather.replace();
 }
 
@@ -463,12 +472,6 @@ async function _openAppDetail(appId, mode) {
         const idBtn = content.querySelector('.adm-check-identity-btn');
         if (idBtn) {
             idBtn.addEventListener('click', () => _handleViewIdentity(idBtn.dataset.uid));
-        }
-
-        // Wire track button inside view
-        const trackBtn = content.querySelector('.adm-app-track-inside');
-        if (trackBtn) {
-            trackBtn.addEventListener('click', () => _openAppDetail(Number(trackBtn.dataset.id), 'track'));
         }
 
         feather.replace();
@@ -544,7 +547,7 @@ function _buildAppDetailHtml(a) {
 
     const status = String(a.status).toLowerCase();
     let sc = 'adm-pill-pending';
-    
+
     if (status === 'registered' || status === 'submitted') {
         sc = 'adm-pill-registered';
     } else if (status.startsWith('approved_by_')) {
@@ -589,11 +592,6 @@ function _buildAppDetailHtml(a) {
         </button>
         <div id="adm-identity-preview-container"></div>
     </div>` : ''}
-    <div style="margin-top:2rem; display:flex; justify-content:flex-end; padding-top:1.5rem; border-top:1px solid #e2e8f0;">
-        <button class="adm-btn adm-app-track adm-app-track-inside" data-id="${a.id}" style="display:flex; align-items:center; gap:0.5rem; padding:0.75rem 1.25rem; font-size:0.9rem; font-weight:600; border-radius:0.5rem; cursor:pointer;">
-            <i data-feather="map" style="width:18px;height:18px;"></i> Track Application Progress
-        </button>
-    </div>
     `;
 }
 
@@ -620,7 +618,7 @@ function _buildTrackHtml(app, steps, sshKey = null, userData = null) {
         ...(steps || []).map(s => {
             const isStepApproved = s.status === 'approved' || s.status === 'active' || s.status === 'completed';
             const isStepRejected = s.status === 'rejected' || s.status === 'declined';
-            
+
             let label = s.status_name;
             if (isStepApproved) label = `Approved by ${s.role_name}`;
             else if (isStepRejected) label = `Declined by ${s.role_name}`;
@@ -628,8 +626,8 @@ function _buildTrackHtml(app, steps, sshKey = null, userData = null) {
             return {
                 label,
                 state: isStepApproved ? 'completed' : (isStepRejected ? 'rejected' : (app.current_step_id === s.workflow_step_id ? 'active' : 'pending')),
-                description: (isStepApproved || isStepRejected) 
-                    ? `${isStepApproved ? 'Approved' : 'Declined'} by ${__esc(s.approved_by_name || 'System')} on ${__formatDate(s.approved_at)}` 
+                description: (isStepApproved || isStepRejected)
+                    ? `${isStepApproved ? 'Approved' : 'Declined'} by ${__esc(s.approved_by_name || 'System')} on ${__formatDate(s.approved_at)}`
                     : 'Action required',
                 services: s.recommended_services,
                 remarks: s.comments
@@ -640,20 +638,20 @@ function _buildTrackHtml(app, steps, sshKey = null, userData = null) {
     if (isCompleted) {
         // Add SSH Step if key exists OR if computing services requested
         if (sshKey || app.computing_services) {
-            detailedItems.push({ 
-                label: sshKey ? 'SSH Key Registered' : 'SSH Key Required', 
-                state: sshKey ? 'completed' : 'active', 
-                description: sshKey ? 'Applicant has a valid public key on file.' : 'Awaiting SSH key upload from applicant.' 
+            detailedItems.push({
+                label: sshKey ? 'SSH Key Registered' : 'SSH Key Required',
+                state: sshKey ? 'completed' : 'active',
+                description: sshKey ? 'Applicant has a valid public key on file.' : 'Awaiting SSH key upload from applicant.'
             });
         }
 
-        detailedItems.push({ 
-            label: userData?.username ? 'Account Created (LDAP)' : 'Account Provisioning', 
-            state: userData?.username ? 'completed' : (sshKey ? 'active' : 'pending'), 
-            description: userData?.username ? 'Identity provisioned in system.' : 'Setting up identity in LDAP...' 
+        detailedItems.push({
+            label: userData?.username ? 'Account Created (LDAP)' : 'Account Provisioning',
+            state: userData?.username ? 'completed' : (sshKey ? 'active' : 'pending'),
+            description: userData?.username ? 'Identity provisioned in system.' : 'Setting up identity in LDAP...'
         });
-        detailedItems.push({ 
-            label: 'Account Activated', 
+        detailedItems.push({
+            label: 'Account Activated',
             state: (isCompleted && userData?.status === 'active') ? 'completed' : 'pending',
             description: (isCompleted && userData?.status === 'active') ? 'Full access granted.' : 'Final activation pending.'
         });
@@ -968,7 +966,11 @@ async function _buildUsersPageHtml() {
             authFetch(`${BASE_URL}/api/auth/admin/permissions`)
         ]);
         if (rRes.ok) { const roles = await rRes.json(); rolesOptions += roles.map(r => `<option value="${r.id}">${__esc(r.name)}</option>`).join(''); }
-        if (iRes.ok) { const data = await iRes.json(); instOptions += data.active.map(i => `<option value="${i.id}">${__esc(i.name)}</option>`).join(''); }
+        if (iRes.ok) {
+            const data = await iRes.json();
+            const list = Array.isArray(data) ? data : (data.all || data.active || []);
+            instOptions += list.map(i => `<option value="${i.id}">${__esc(i.name)}</option>`).join('');
+        }
         if (cRes.ok) { const cats = await cRes.json(); catOptions += cats.map(c => `<option value="${c.id}">${__esc(c.name)}</option>`).join(''); }
         if (pRes.ok) {
             const perms = await pRes.json();
@@ -1104,15 +1106,22 @@ async function _buildUsersPageHtml() {
 
             <!-- 4. Users Directory (Nested Accordion) -->
             <div class="adm-accordion" id="users-list-accordion" style="margin-top:1.5rem; border:1px solid #e2e8f0; border-radius:12px; background:#fff; overflow:hidden;">
-                <div class="adm-accordion-header" style="padding:1rem 1.25rem; background:linear-gradient(to right, #f5f3ff 20%, #fff); border-left:5px solid #6366f1; border-bottom:1px solid #f1f5f9; cursor:pointer;">
+                <div class="adm-accordion-header" style="padding:1rem 1.25rem; background:linear-gradient(to right, #f5f3ff 20%, #fff); border-left:5px solid #6366f1; border-bottom:1px solid #f1f5f9; cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:16px;">
                     <div style="display:flex; align-items:center; gap:12px;">
                         <div style="width:36px; height:36px; border-radius:8px; background:#fff; color:#6366f1; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 4px rgba(0,0,0,0.05);">
                             <i data-feather="users"></i>
                         </div>
-                        <h4 style="margin:0; font-size:0.95rem; color:#1e293b; font-weight:800;">EXISTING USERS DIRECTORY</h4>
-                        <span id="users-list-count" style="margin-left:auto; background:#6366f1; color:#fff; padding:2px 8px; border-radius:12px; font-size:0.75rem; font-weight:700; min-width:24px; text-align:center; display:none;"></span>
+                        <h4 style="margin:0; font-size:0.95rem; color:#1e293b; font-weight:800;">USERS DIRECTORY</h4>
+                        <span id="users-list-count" style="background:#6366f1; color:#fff; padding:2px 8.5px; border-radius:12px; font-size:0.75rem; font-weight:700; min-width:24px; text-align:center; display:none;"></span>
                     </div>
-                    <i data-feather="chevron-down" class="adm-accordion-chevron" style="color:#64748b; margin-left: 10px;"></i>
+
+                    <!-- Search Input on Header -->
+                    <div style="flex:1; max-width:300px; position:relative; margin-left:auto; margin-right:12px;" onclick="event.stopPropagation();">
+                        <i data-feather="search" style="position:absolute; left:12px; top:50%; transform:translateY(-50%); width:14px; height:14px; color:#94a3b8; pointer-events:none;"></i>
+                        <input type="text" id="adm-users-search-input" class="adm-search-input" placeholder="Search users by name or email…" style="height:34px; padding-left:2.25rem; font-size:0.75rem; border-color:#dcd7ff; background:#fff; margin:0;" />
+                    </div>
+
+                    <i data-feather="chevron-down" class="adm-accordion-chevron" style="color:#64748b;"></i>
                 </div>
                 <div class="adm-accordion-content" style="padding:1.5rem;">
                     <div id="adm-users-list-container"></div>
@@ -1155,7 +1164,7 @@ async function _wireAssignRoleForm(content) {
 
             addRoleBtn.disabled = true; fb.style.color = '#6366f1'; fb.textContent = 'Initializing Role…';
             try {
-                const res = await authFetch(`${BASE_URL}/api/auth/admin/data/roles`, {
+                const res = await authFetch(`${BASE_URL}/api/auth/admin/roles`, {
                     method: 'POST',
                     body: JSON.stringify({ name, slug, level, permissions: perms })
                 });
@@ -1182,22 +1191,136 @@ async function _wireAssignRoleForm(content) {
         assignmentCreator.querySelector('.adm-accordion-header').onclick = () => assignmentCreator.classList.toggle('open');
     }
 
+    let cachedUsers = [];
+    let instF, roleF;
+
+    const renderFilteredUsers = () => {
+        const searchQuery = (content.querySelector('#adm-users-search-input')?.value || '').toLowerCase().trim();
+
+        const filtered = cachedUsers.filter(u => {
+            const name = (u.name || '').toLowerCase();
+            const email = (u.email || '').toLowerCase();
+            return !searchQuery || name.includes(searchQuery) || email.includes(searchQuery);
+        });
+
+        // Update count badge
+        const badgeEl = usersContainer.querySelector('#user-count-badge');
+        if (badgeEl) {
+            badgeEl.textContent = filtered.length;
+        }
+        const accordionCount = content.querySelector('#users-list-count');
+        if (accordionCount) {
+            accordionCount.textContent = filtered.length;
+            accordionCount.style.display = 'inline-block';
+        }
+
+        const listContainer = usersContainer.querySelector('#adm-users-actual-list');
+        if (!listContainer) return;
+
+        listContainer.innerHTML = filtered.length ? `
+            <div class="adm-table-wrap" style="background:#fff; border:1px solid #e2e8f0; border-radius:12px; max-height:550px; overflow-y:auto; scrollbar-width:thin;">
+                <table class="adm-table">
+                    <thead>
+                        <tr>
+                            <th style="text-align:center;">User Identity</th>
+                            <th>Designated Role</th>
+                            <th>Institute / Affiliation</th>
+                            <th style="text-align:center;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    ${filtered.map(u => {
+                        const isBlocked = !!u.is_blocked || u.status === 'blocked';
+                        const nameInitials = (u.name || '').split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2) || '??';
+                        return `
+                        <tr style="${isBlocked ? 'background:#fff5f5;' : ''}">
+                            <td style="text-align:left;">
+                                <div style="display:flex; align-items:center; gap:1.25rem;">
+                                    <div style="width:42px; height:42px; border-radius:10px; background:${isBlocked ? 'linear-gradient(135deg, #fee2e2, #fecaca)' : 'linear-gradient(135deg, #f5f3ff, #ede9fe)'}; display:flex; align-items:center; justify-content:center; color:${isBlocked ? '#dc2626' : '#6366f1'}; font-weight:800; font-size:0.85rem; border:1px solid ${isBlocked ? '#fca5a5' : '#e0e7ff'}; box-shadow:0 2px 4px rgba(99, 102, 241, 0.05); flex-shrink:0;">
+                                        ${nameInitials}
+                                    </div>
+                                    <div>
+                                        <div style="font-weight:700; color:#1e293b; font-size:0.95rem; display:flex; align-items:center; gap:10px;">
+                                            ${__esc(u.name)}
+                                            <span class="adm-pill ${isBlocked ? 'adm-pill-pending' : (u.status === 'completed' || u.status === 'active' ? 'adm-pill-approved' : 'adm-pill-pending')}" style="font-size:0.6rem; padding:2px 8px; text-transform:uppercase; letter-spacing:0.02em; ${isBlocked ? 'background:#fef2f2; color:#ef4444; border:1px solid #fca5a5;' : ''}">
+                                                ${isBlocked ? 'Blocked' : __esc(u.status)}
+                                            </span>
+                                        </div>
+                                        <div style="font-size:0.75rem; color:#64748b; margin-top:2px; font-weight:500;">${__esc(u.email)}</div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>
+                                <div style="display:flex; align-items:center; gap:6px;">
+                                    <div style="width:6px; height:6px; border-radius:50%; background:${isBlocked ? '#ef4444' : '#6366f1'};"></div>
+                                    <span style="font-size:0.85rem; font-weight:700; color:#475569;">${__esc(u.role_name || 'Unassigned')}</span>
+                                </div>
+                            </td>
+                            <td>
+                                <span style="font-size:0.85rem; color:#475569; font-weight:600;" title="${__esc(u.institute_name || 'Independent')}">
+                                    ${__esc(u.institute_name || 'Independent')}
+                                </span>
+                            </td>
+                            <td style="text-align:center;">
+                                <div style="display:inline-flex; align-items:center; justify-content:center; gap:8px;">
+                                    <button class="adm-btn adm-btn-secondary" style="font-size:0.7rem; height:34px; padding:0 14px; border-radius:8px; background:#f8fafc; border:1px solid #e2e8f0; font-weight:700; color:#6366f1; display:flex; align-items:center; gap:6px; cursor:pointer;" onclick="_manageUser('${u.email}')">
+                                        <i data-feather="edit-3" style="width:12px; height:12px;"></i> Manage
+                                    </button>
+                                    <button class="adm-btn" style="font-size:0.7rem; height:34px; padding:0 12px; border-radius:8px; font-weight:700; color:${isBlocked ? '#10b981' : '#dc2626'}; border:1px solid ${isBlocked ? '#a7f3d0' : '#fecaca'}; background:${isBlocked ? '#ecfdf5' : '#fef2f2'}; display:flex; align-items:center; gap:4px; cursor:pointer;" onclick="_toggleBlockUser('${u.id}', ${isBlocked})">
+                                        <i data-feather="${isBlocked ? 'unlock' : 'shield-off'}" style="width:12px; height:12px;"></i> ${isBlocked ? 'Unblock' : 'Block'}
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>`;
+                    }).join('')}
+                    </tbody>
+                </table>
+            </div>` :
+            `<div class="adm-empty" style="background:#fff; border:1px dashed #e2e8f0; border-radius:12px; padding:4rem 0;"><span>👤</span>No users found matching query.</div>`;
+        feather.replace();
+    };
+
     const loadUserList = async (instFilter = '', roleFilter = '') => {
+        try {
+            if (!_state.cachedInstitutesList || !_state.cachedRolesList) {
+                const [instRes, roleRes] = await Promise.all([
+                    authFetch(API.ADMIN_INSTITUTES),
+                    authFetch(API.ADMIN_ROLES)
+                ]);
+                if (instRes.ok) {
+                    const data = await instRes.json();
+                    _state.cachedInstitutesList = data.all || [...(data.active || []), ...(data.pending || [])];
+                }
+                if (roleRes.ok) {
+                    _state.cachedRolesList = await roleRes.json();
+                }
+            }
+        } catch (err) {
+            console.error('Failed to load dynamic filter lookups', err);
+        }
+
+        const instOptsHtml = (_state.cachedInstitutesList || []).map(i => 
+            `<option value="${i.id}" ${instFilter == i.id ? 'selected' : ''}>${__esc(i.name)}</option>`
+        ).join('');
+
+        const roleOptsHtml = (_state.cachedRolesList || []).map(r => 
+            `<option value="${r.id}" ${roleFilter == r.id ? 'selected' : ''}>${__esc(r.name)}</option>`
+        ).join('');
+
         usersContainer.innerHTML = `
-            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1.5rem; gap:1rem; padding:0.75rem 1.25rem; background:linear-gradient(to right, #f5f3ff 20%, transparent); border-left:5px solid #6366f1; border-radius:0.5rem;">
-                <div style="font-size:1rem; color:#0f172a; font-weight:800; display:flex; align-items:center; gap:10px;">
-                    <i data-feather="users" style="width:20px; height:20px; color:#6366f1;"></i>
-                    USERS DIRECTORY 
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1.5rem; gap:1rem; padding:0.5rem 0;">
+                <div style="font-size:0.85rem; color:#64748b; font-weight:700;">
+                    Filter by Affiliation & Role:
                     <span id="user-count-badge" class="adm-pill adm-pill-approved" style="margin-left:8px; font-size:0.7rem; background:#fff;">...</span>
                 </div>
                 <div style="display:flex; gap:0.75rem;">
-                    <select id="adm-user-list-inst-filter" class="adm-select" style="max-width:180px; height:34px; font-size:0.75rem; background:#fff; border-color:#dcd7ff;">
+                    <select id="adm-user-list-inst-filter" class="adm-select" style="max-width:180px; height:34px; font-size:0.75rem; background:#fff; border-color:#dcd7ff; margin:0;">
                         <option value="">All Institutes</option>
-                        ${Array.from(content.querySelector('#adm-m-inst-select').options).slice(1).map(o => `<option value="${o.value}" ${instFilter == o.value ? 'selected' : ''}>${__esc(o.text)}</option>`).join('')}
+                        ${instOptsHtml}
                     </select>
-                    <select id="adm-user-list-role-filter" class="adm-select" style="max-width:180px; height:34px; font-size:0.75rem; background:#fff; border-color:#dcd7ff;">
+                    <select id="adm-user-list-role-filter" class="adm-select" style="max-width:180px; height:34px; font-size:0.75rem; background:#fff; border-color:#dcd7ff; margin:0;">
                         <option value="">All Roles</option>
-                        ${Array.from(content.querySelector('#adm-m-role-select').options).slice(1).map(o => `<option value="${o.value}" ${roleFilter == o.value ? 'selected' : ''}>${__esc(o.text)}</option>`).join('')}
+                        ${roleOptsHtml}
                     </select>
                 </div>
             </div>
@@ -1206,8 +1329,8 @@ async function _wireAssignRoleForm(content) {
             </div>
         `;
 
-        const instF = usersContainer.querySelector('#adm-user-list-inst-filter');
-        const roleF = usersContainer.querySelector('#adm-user-list-role-filter');
+        instF = usersContainer.querySelector('#adm-user-list-inst-filter');
+        roleF = usersContainer.querySelector('#adm-user-list-role-filter');
 
         const applyFilters = () => loadUserList(instF.value, roleF.value);
         instF.onchange = applyFilters;
@@ -1220,74 +1343,114 @@ async function _wireAssignRoleForm(content) {
 
             const url = `${API.ADMIN_DATA('users')}?${params.toString()}`;
             const res = await authFetch(url);
-            const list = res.ok ? await res.json() : [];
+            cachedUsers = res.ok ? await res.json() : [];
 
-            usersContainer.querySelector('#user-count-badge').textContent = list.length;
-
-            const listContainer = usersContainer.querySelector('#adm-users-actual-list');
-            listContainer.innerHTML = list.length ? `
-                <div class="adm-crud-list" style="background:#fff; border:1px solid #e2e8f0; border-radius:12px; overflow:hidden;">
-                    <!-- Table Header -->
-                    <div style="display:flex; align-items:center; padding:0.75rem 1.5rem; background:#f8fafc; border-bottom:1px solid #e2e8f0; font-size:0.65rem; font-weight:800; color:#64748b; text-transform:uppercase; letter-spacing:0.05em;">
-                        <div style="width:40px;"></div>
-                        <div style="flex:1;">User Identity</div>
-                        <div style="width:180px;">Designated Role</div>
-                        <div style="width:200px;">Institute / Affiliation</div>
-                        <div style="width:120px; text-align:right;">Actions</div>
-                    </div>
-                    <div style="max-height:600px; overflow-y:auto; scrollbar-width:thin;">
-                    ${list.map(u => `
-                        <div class="adm-crud-row" style="padding:1.25rem 1.5rem; border-bottom:1px solid #f1f5f9; display:flex; align-items:center; transition:background 0.2s;" onmouseover="this.style.background='#fbfcfe'" onmouseout="this.style.background='transparent'">
-                            <div style="width:40px; display:flex; align-items:center;">
-                                <input type="checkbox" style="width:16px; height:16px; accent-color:#6366f1; cursor:pointer;" />
-                            </div>
-                            <div style="flex:1; display:flex; align-items:center; gap:1.25rem;">
-                                <div style="width:42px; height:42px; border-radius:10px; background:linear-gradient(135deg, #f5f3ff, #ede9fe); display:flex; align-items:center; justify-content:center; color:#6366f1; font-weight:800; font-size:0.85rem; border:1px solid #e0e7ff; box-shadow:0 2px 4px rgba(99, 102, 241, 0.05);">
-                                    ${u.name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2)}
-                                </div>
-                                <div>
-                                    <div style="font-weight:700; color:#1e293b; font-size:0.95rem; display:flex; align-items:center; gap:10px;">
-                                        ${__esc(u.name)}
-                                        <span class="adm-pill ${u.status === 'completed' || u.status === 'active' ? 'adm-pill-approved' : 'adm-pill-pending'}" style="font-size:0.6rem; padding:2px 8px; text-transform:uppercase; letter-spacing:0.02em;">
-                                            ${__esc(u.status)}
-                                        </span>
-                                    </div>
-                                    <div style="font-size:0.75rem; color:#64748b; margin-top:2px; font-weight:500;">${__esc(u.email)}</div>
-                                </div>
-                            </div>
-                            
-                            <div style="width:180px;">
-                                <div style="display:flex; align-items:center; gap:6px;">
-                                    <div style="width:6px; height:6px; border-radius:50%; background:#6366f1;"></div>
-                                    <span style="font-size:0.85rem; font-weight:700; color:#475569;">${__esc(u.role_name || 'Unassigned')}</span>
-                                </div>
-                            </div>
-
-                            <div style="width:200px;">
-                                <div style="font-size:0.85rem; color:#64748b; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${__esc(u.institute_name || 'N/A')}">
-                                    ${__esc(u.institute_name || 'Independent')}
-                                </div>
-                            </div>
-
-                            <div style="width:120px; display:flex; justify-content:flex-end;">
-                                <button class="adm-btn adm-btn-secondary" style="font-size:0.7rem; height:34px; padding:0 14px; border-radius:8px; background:#f8fafc; border:1px solid #e2e8f0; font-weight:700; color:#6366f1; display:flex; align-items:center; gap:6px;" onclick="_manageUser('${u.email}')">
-                                    <i data-feather="edit-3" style="width:12px; height:12px;"></i> Manage
-                                </button>
-                            </div>
-                        </div>`).join('')}
-                    </div>
-                </div>` :
-                `<div class="adm-empty" style="background:#fff; border:1px dashed #e2e8f0; border-radius:12px; padding:4rem 0;"><span>👤</span>No users found matching filters.</div>`;
-
-            // Update Accordion Badge
-            const usersAccordionCount = content.querySelector('#users-list-count');
-            if (usersAccordionCount) {
-                usersAccordionCount.textContent = list.length;
-                usersAccordionCount.style.display = 'inline-block';
-            }
-
-            feather.replace();
+            renderFilteredUsers();
         } catch (err) { usersContainer.innerHTML = `Error loading users: ${err.message}`; }
+    };
+
+    const searchInput = content.querySelector('#adm-users-search-input');
+    if (searchInput) {
+        searchInput.oninput = () => renderFilteredUsers();
+    }
+
+    window._toggleBlockUser = async (userId, isBlocked) => {
+        const targetUser = cachedUsers.find(u => String(u.id) === String(userId));
+        const userName = targetUser ? targetUser.name : 'this user';
+
+        const proceedToggle = async (reason = '') => {
+            try {
+                const res = await authFetch(`${BASE_URL}/api/auth/admin/users/${userId}/toggle-block`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({ reason })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    _showToast(data.message, 'success');
+                    loadUserList(instF?.value || '', roleF?.value || '');
+                } else {
+                    _showToast(data.error || 'Failed to update user block status', 'error');
+                }
+            } catch (e) {
+                _showToast(e.message, 'error');
+            }
+        };
+
+        if (!isBlocked) {
+            const modalId = 'adm-block-reason-modal';
+            let modalEl = document.getElementById(modalId);
+            if (modalEl) modalEl.remove();
+
+            modalEl = document.createElement('div');
+            modalEl.id = modalId;
+            modalEl.style = `
+                position: fixed;
+                top: 0; left: 0; width: 100%; height: 100%;
+                background: rgba(15, 23, 42, 0.6);
+                backdrop-filter: blur(8px);
+                display: flex; align-items: center; justify-content: center;
+                z-index: 99999; opacity: 0; transition: opacity 0.25s ease;
+            `;
+
+            modalEl.innerHTML = `
+                <div style="background: #fff; width: 100%; max-width: 460px; border-radius: 16px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04); overflow: hidden; transform: scale(0.95); transition: transform 0.25s ease; border: 1px solid #e2e8f0;">
+                    <div style="padding: 1.25rem 1.5rem; background: linear-gradient(to right, #fef2f2, #fff); border-bottom: 1px solid #fee2e2; display: flex; align-items: center; gap: 12px;">
+                        <div style="width: 36px; height: 36px; border-radius: 50%; background: #fee2e2; color: #ef4444; display: flex; align-items: center; justify-content: center;">
+                            <i data-feather="shield-off" style="width: 18px; height: 18px;"></i>
+                        </div>
+                        <div>
+                            <h3 style="margin: 0; font-size: 1rem; font-weight: 800; color: #991b1b;">Block User Profile</h3>
+                            <p style="margin: 0; font-size: 0.65rem; color: #b91c1c; font-weight: 600;">ENFORCE SYSTEM ACCESS RESTRICTIONS</p>
+                        </div>
+                    </div>
+                    <div style="padding: 1.5rem;">
+                        <p style="margin: 0 0 1rem 0; font-size: 0.8rem; color: #475569; font-weight: 600; line-height: 1.5;">
+                            You are about to block <strong style="color: #1e293b;">${__esc(userName)}</strong>. Please state the official reason for this administrative block below:
+                        </p>
+                        <textarea id="adm-block-reason-textarea" placeholder="e.g. Discovered multiple duplicate profiles/spam activity." style="width: 100%; height: 110px; padding: 12px 14px; border-radius: 10px; border: 1.5px solid #e2e8f0; font-size: 0.8rem; resize: none; outline: none; transition: border-color 0.2s;" onfocus="this.style.borderColor='#ef4444'"></textarea>
+                        <div id="adm-block-reason-error" style="color: #ef4444; font-size: 0.75rem; font-weight: 700; margin-top: 8px; display: none;">Reason is required.</div>
+                    </div>
+                    <div style="padding: 1rem 1.5rem; background: #f8fafc; border-top: 1px solid #f1f5f9; display: flex; justify-content: flex-end; gap: 10px;">
+                        <button id="adm-block-cancel-btn" class="adm-btn adm-btn-secondary" style="height: 34px; font-size: 0.75rem; font-weight: 700; padding: 0 1rem; border-radius: 6px;">Cancel</button>
+                        <button id="adm-block-confirm-btn" class="adm-btn" style="height: 34px; font-size: 0.75rem; font-weight: 700; padding: 0 1.25rem; border-radius: 6px; background: #dc2626; color: #fff; border: 1px solid #dc2626; cursor: pointer;">Confirm Block</button>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(modalEl);
+            feather.replace();
+
+            setTimeout(() => {
+                modalEl.style.opacity = '1';
+                modalEl.firstElementChild.style.transform = 'scale(1)';
+            }, 50);
+
+            const textarea = modalEl.querySelector('#adm-block-reason-textarea');
+            const errorEl = modalEl.querySelector('#adm-block-reason-error');
+            textarea.focus();
+
+            const closeModal = () => {
+                modalEl.style.opacity = '0';
+                modalEl.firstElementChild.style.transform = 'scale(0.95)';
+                setTimeout(() => modalEl.remove(), 250);
+            };
+
+            modalEl.querySelector('#adm-block-cancel-btn').onclick = closeModal;
+            modalEl.querySelector('#adm-block-confirm-btn').onclick = () => {
+                const val = textarea.value.trim();
+                if (!val) {
+                    errorEl.style.display = 'block';
+                    textarea.style.borderColor = '#ef4444';
+                    return;
+                }
+                closeModal();
+                proceedToggle(val);
+            };
+        } else {
+            if (confirm(`Are you sure you want to unblock ${userName}?`)) {
+                proceedToggle();
+            }
+        }
     };
 
     window._manageUser = async (email) => {
@@ -1296,7 +1459,8 @@ async function _wireAssignRoleForm(content) {
         const catSelect = content.querySelector('#adm-m-cat-select');
         const roleSelect = content.querySelector('#adm-m-role-select');
         const assignmentAccordion = content.querySelector('#role-assignment-accordion');
-        
+        const assignBtn = content.querySelector('#adm-m-assign-btn');
+
         emailInput.value = email;
         _showToast('Fetching user details...', 'info');
 
@@ -1304,10 +1468,26 @@ async function _wireAssignRoleForm(content) {
             const res = await authFetch(`${BASE_URL}/api/auth/admin/users/details?identifier=${encodeURIComponent(email)}`);
             if (res.ok) {
                 const data = await res.json();
+                
+                if (data.is_blocked) {
+                    _showToast('This user is blocked. Unblock them first to manage their roles.', 'error');
+                    if (assignBtn) {
+                        assignBtn.disabled = true;
+                        assignBtn.textContent = 'User Blocked';
+                        assignBtn.style.opacity = '0.5';
+                    }
+                } else {
+                    if (assignBtn) {
+                        assignBtn.disabled = false;
+                        assignBtn.textContent = 'Update User Access';
+                        assignBtn.style.opacity = '1';
+                    }
+                }
+
                 if (data.institute_id) instSelect.value = data.institute_id;
                 if (data.category_id) catSelect.value = data.category_id;
                 if (data.role_id) roleSelect.value = data.role_id;
-                
+
                 // Trigger entity check if role is lead
                 await checkRoleEntity();
                 if (data.entity_id) {
@@ -1315,7 +1495,9 @@ async function _wireAssignRoleForm(content) {
                     if (entSelect) entSelect.value = data.entity_id;
                 }
 
-                _showToast('User details loaded', 'success');
+                if (!data.is_blocked) {
+                    _showToast('User details loaded', 'success');
+                }
             }
         } catch (e) {
             console.error('Failed to fetch user details:', e);
@@ -1329,7 +1511,7 @@ async function _wireAssignRoleForm(content) {
         try {
             const res = await authFetch(API.ADMIN_ROLES);
             const list = res.ok ? await res.json() : [];
-            
+
             // Update Accordion Badge
             const rolesAccordionCount = content.querySelector('#roles-list-count');
             if (rolesAccordionCount) {
@@ -1392,8 +1574,8 @@ async function _wireAssignRoleForm(content) {
                 };
             });
             feather.replace();
-        } catch (e) { 
-            rolesContainer.innerHTML = `<div class="adm-empty" style="color:#ef4444;"><span>⚠️</span>Error loading roles: ${e.message}</div>`; 
+        } catch (e) {
+            rolesContainer.innerHTML = `<div class="adm-empty" style="color:#ef4444;"><span>⚠️</span>Error loading roles: ${e.message}</div>`;
         }
     };
 
@@ -1447,7 +1629,7 @@ async function _wireAssignRoleForm(content) {
         try {
             const res = await authFetch(`${BASE_URL}/api/auth/admin/data/${type}?institute_id=${instId}`);
             const data = res.ok ? await res.json() : [];
-            
+
             if (!data || data.length === 0) {
                 entitySelect.innerHTML = `<option value="">— No ${type} associated with this institute —</option>`;
                 entitySelect.disabled = true;
@@ -1457,8 +1639,8 @@ async function _wireAssignRoleForm(content) {
                     data.map(e => `<option value="${e.id}">${__esc(e.name)} ${e.system_name ? `(Part of ${__esc(e.system_name)})` : ''}</option>`).join('');
                 entitySelect.disabled = false;
             }
-        } catch (_) { 
-            entitySelect.innerHTML = '<option value="">Error loading entities</option>'; 
+        } catch (_) {
+            entitySelect.innerHTML = '<option value="">Error loading entities</option>';
             entitySelect.disabled = true;
         }
     }
@@ -1509,29 +1691,30 @@ async function _wireAssignRoleForm(content) {
 // 6. INSTITUTE MANAGEMENT (NEW)
 // ═══════════════════════════════════════════════════════════════════════════
 async function _loadInstitutes() {
+    _state.cachedInstitutesList = null;
     const container = _app.querySelector('#adm-inst-container');
     container.innerHTML = `<div class="adm-loading"><div class="adm-spinner"></div> Loading institutes…</div>`;
 
     try {
         const res = await authFetch(API.ADMIN_INSTITUTES);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const { active, pending } = await res.json();
-
-        _renderInstitutes(container, active, pending);
+        const data = await res.json();
+        const all = data.all || [...(data.active || []), ...(data.pending || [])];
+        _renderInstitutes(container, all);
     } catch (err) {
         container.innerHTML = `<div class="adm-empty"><span>❌</span>Failed to load institutes: ${err.message}</div>`;
     }
 }
 
-function _renderInstitutes(container, active, pending) {
+function _renderInstitutes(container, all) {
     container.innerHTML = `
         <div class="adm-page-header" style="margin-bottom:2rem; display:flex; align-items:center; gap:1.5rem;">
             <button class="adm-btn adm-btn-secondary" onclick="_switchTab('modify')" style="padding:0.5rem; border-radius:50%; width:40px; height:40px;">
                 <i data-feather="arrow-left"></i>
             </button>
             <div>
-                <h2 class="adm-page-title"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 8px;"><path d="M3 21h18"/><path d="M3 7v1a3 3 0 0 0 6 0V7m0 1a3 3 0 0 0 6 0V7m0 1a3 3 0 0 0 6 0V7H3l2-4h14l2 4"/><path d="M5 21V10.85"/><path d="M19 21V10.85"/><path d="M9 21v-4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v4"/></svg>Institute Management</h2>
-                <p class="adm-page-sub">Add new authorized institutes or review pending registrations</p>
+                <h2 class="adm-page-title"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 8px;"><path d="M3 21h18"/><path d="M3 7v1a3 3 0 0 0 6 0V7m0 1a3 3 0 0 0 6 0V7m0 1a3 3 0 0 0 6 0V7H3l2-4h14l2 4"/><path d="M5 21V10.85"/><path d="M19 21V10.85"/><path d="M9 21v-4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v4"/></svg>Modify Institutes</h2>
+                <p class="adm-page-sub">Manage institute names, correct spellings, and remove incorrect entries</p>
             </div>
         </div>
 
@@ -1565,62 +1748,30 @@ function _renderInstitutes(container, active, pending) {
                     </div>
                 </div>
                 <div id="adm-in-fb" style="min-height:1.2rem; font-size:0.85rem; margin-bottom:1rem;"></div>
-                <button id="adm-in-btn" class="adm-btn adm-btn-primary" style="width:auto; padding:0.75rem 2.5rem; background:#6366f1;">Register & Approve</button>
+                <button id="adm-in-btn" class="adm-btn adm-btn-primary" style="width:auto; padding:0.75rem 2.5rem; background:#6366f1;">Register &amp; Save</button>
             </div>
         </div>
 
-        <!-- Pending Approvals (Accordion) -->
-        <div class="adm-accordion" id="inst-pending-accordion" style="margin-bottom:2rem; border:1px solid #e2e8f0; border-radius:12px; background:#fff; overflow:hidden;">
-            <div class="adm-accordion-header" style="padding:1rem 1.25rem; background:linear-gradient(to right, #fff5f5 20%, #fff); border-left:5px solid #ef4444; border-bottom:1px solid #f1f5f9; cursor:pointer;">
+        <!-- All Institutes (Accordion) -->
+        <div class="adm-accordion open" id="inst-active-accordion" style="margin-bottom:2rem; border:1px solid #e2e8f0; border-radius:12px; background:#fff; overflow:hidden;">
+            <div class="adm-accordion-header" style="padding:1rem 1.25rem; background:linear-gradient(to right, #f5f3ff 20%, #fff); border-left:5px solid #6366f1; border-bottom:1px solid #f1f5f9; cursor:pointer;">
                 <div style="display:flex; align-items:center; gap:12px; flex:1;">
-                    <div style="width:36px; height:36px; border-radius:8px; background:#fff; color:#ef4444; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 4px rgba(0,0,0,0.05);">
-                        <i data-feather="clock"></i>
+                    <div style="width:36px; height:36px; border-radius:8px; background:#fff; color:#6366f1; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 4px rgba(0,0,0,0.05);">
+                        <i data-feather="list"></i>
                     </div>
-                    <h4 style="margin:0; font-size:0.95rem; color:#1e293b; font-weight:800;">PENDING APPROVALS</h4>
-                    <span style="margin-left:auto; background:#ef4444; color:#fff; padding:2px 8px; border-radius:12px; font-size:0.75rem; font-weight:700; min-width:24px; text-align:center;">${pending.length}</span>
+                    <h4 style="margin:0; font-size:0.95rem; color:#1e293b; font-weight:800;">ALL INSTITUTES</h4>
+                    <span style="margin-left:auto; background:#6366f1; color:#fff; padding:2px 8px; border-radius:12px; font-size:0.75rem; font-weight:700; min-width:24px; text-align:center;">${all.length}</span>
                 </div>
                 <i data-feather="chevron-down" class="adm-accordion-chevron" style="color:#64748b; margin-left:10px;"></i>
             </div>
             <div class="adm-accordion-content" style="padding:1.5rem;">
-                ${pending.length ? `
-                    <div class="adm-table-wrap" style="background:#fff; border:1px solid #e2e8f0; border-radius:12px; overflow:hidden;">
-                        <table class="adm-table">
-                            <thead>
-                                <tr>
-                                    <th>Institute Name</th>
-                                    <th>Status</th>
-                                    <th style="text-align:right;">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${pending.map(p => `
-                                    <tr>
-                                        <td><strong>${__esc(p.name)}</strong></td>
-                                        <td><span class="adm-pill adm-pill-pending">Pending Review</span></td>
-                                        <td style="text-align:right;">
-                                            <button class="adm-btn adm-btn-success adm-inst-approve" data-id="${p.id}" data-name="${__esc(p.name)}" data-code="${__esc(p.code)}" style="font-size:0.7rem; padding:0.4rem 1rem;">Approve</button>
-                                            <button class="adm-btn adm-btn-danger adm-inst-decline" data-id="${p.id}" style="font-size:0.7rem; padding:0.4rem 1rem; margin-left:0.5rem;">Decline</button>
-                                        </td>
-                                    </tr>`).join('')}
-                            </tbody>
-                        </table>
-                    </div>` : `<div class="adm-empty" style="padding:2rem 0;"><span>📂</span>No pending approvals.</div>`}
-            </div>
-        </div>
-
-        <!-- Authorized Institutes (Accordion) -->
-        <div class="adm-accordion" id="inst-active-accordion" style="margin-bottom:2rem; border:1px solid #e2e8f0; border-radius:12px; background:#fff; overflow:hidden;">
-            <div class="adm-accordion-header" style="padding:1rem 1.25rem; background:linear-gradient(to right, #f0fdf4 20%, #fff); border-left:5px solid #22c55e; border-bottom:1px solid #f1f5f9; cursor:pointer;">
-                <div style="display:flex; align-items:center; gap:12px; flex:1;">
-                    <div style="width:36px; height:36px; border-radius:8px; background:#fff; color:#22c55e; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 4px rgba(0,0,0,0.05);">
-                        <i data-feather="check-circle"></i>
+                <div style="display:flex; gap:1.25rem; margin-bottom:1.25rem; flex-wrap:wrap; align-items:center; padding:12px; background:#f8fafc; border-radius:8px; border:1px solid #e2e8f0;">
+                    <div style="display:flex; align-items:center; gap:8px; background:#fff; border:1px solid #cbd5e1; border-radius:8px; padding:6px 12px; width:100%; max-width:360px; box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+                        <i data-feather="search" style="width:16px; height:16px; color:#64748b;"></i>
+                        <input type="text" id="adm-inst-search" placeholder="Search by name, code, city..." style="border:none; outline:none; font-size:0.85rem; width:100%; color:#1e293b; font-weight:500;" />
                     </div>
-                    <h4 style="margin:0; font-size:0.95rem; color:#1e293b; font-weight:800;">AUTHORIZED INSTITUTES</h4>
-                    <span style="margin-left:auto; background:#22c55e; color:#fff; padding:2px 8px; border-radius:12px; font-size:0.75rem; font-weight:700; min-width:24px; text-align:center;">${active.length}</span>
                 </div>
-                <i data-feather="chevron-down" class="adm-accordion-chevron" style="color:#64748b; margin-left:10px;"></i>
-            </div>
-            <div class="adm-accordion-content" style="padding:1.5rem;">
+
                 <div class="adm-table-wrap" style="background:#fff; border:1px solid #e2e8f0; border-radius:12px; overflow:hidden;">
                     <table class="adm-table">
                         <thead>
@@ -1629,32 +1780,63 @@ function _renderInstitutes(container, active, pending) {
                                 <th>Code</th>
                                 <th>City</th>
                                 <th>Status</th>
-                                <th style="text-align:right;">Active</th>
+                                <th style="text-align:center;">Actions</th>
                             </tr>
                         </thead>
-                        <tbody>
-                            ${active.map(a => `
-                                <tr>
+                        <tbody id="adm-inst-active-tbody">
+                            ${all.length ? all.map(a => `
+                                <tr class="adm-inst-row" data-name="${__esc(a.name)}" data-code="${__esc(a.code || '')}" data-city="${__esc(a.city || '')}">
                                     <td>
-                                        <div style="display:flex; align-items:center; gap:0.75rem;">
-                                            <div style="width:32px; height:32px; border-radius:8px; background:#f5f3ff; color:#6366f1; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:0.75rem;">${(a.name || '?')[0]}</div>
-                                            <strong style="color:#1e293b;">${__esc(a.name)}</strong>
+                                        <div>
+                                            <div style="display:flex; align-items:center; flex-wrap:wrap; gap:6px;">
+                                                <strong style="color:#1e293b;">${__esc(a.name)}</strong>
+                                                ${a.is_user_suggested ? '<span class="adm-pill" style="font-size:0.6rem; padding:2px 8px; background:#fffbeb; color:#b45309; border:1px solid #fef3c7; border-radius:4px; font-weight:700;">User Suggested</span>' : ''}
+                                            </div>
+                                            <div style="font-size:0.7rem; color:#64748b; margin-top:4px; display:flex; flex-direction:column; gap:2px;">
+                                                ${a.creator_name ? `<span><strong>Added by:</strong> ${__esc(a.creator_name)}</span>` : ''}
+                                                ${a.modifier_name ? `<span><strong>Modified by:</strong> ${__esc(a.modifier_name)}</span>` : ''}
+                                            </div>
                                         </div>
                                     </td>
-                                    <td><code style="color:#6366f1; font-weight:600;">${__esc(a.code)}</code></td>
+                                    <td><code style="color:#6366f1; font-weight:600;">${__esc(a.code || '—')}</code></td>
                                     <td><span style="color:#64748b; font-size:0.85rem;">${__esc(a.city || '—')}</span></td>
                                     <td>
-                                        <span class="adm-pill ${a.status === 'approved' ? 'adm-pill-approved' : 'adm-pill-pending'}" style="font-size:0.65rem;">
-                                            ${a.status === 'approved' ? 'Approved' : 'Inactive'}
-                                        </span>
+                                        <div style="display:inline-flex; align-items:center; gap:8px;">
+                                            <span class="adm-pill ${a.is_active ? 'adm-pill-approved' : 'adm-pill-pending'}" style="font-size:0.65rem; min-width:55px; text-align:center; text-transform:uppercase; font-weight:700; letter-spacing:0.02em;">
+                                                ${a.is_active ? 'Active' : 'Inactive'}
+                                            </span>
+                                            <label class="adm-switch" style="margin:0;" title="${a.is_active ? 'Active (Click to Deactivate)' : 'Inactive (Click to Activate)'}">
+                                                <input type="checkbox" class="adm-inst-toggle-switch" data-id="${a.id}" ${a.is_active ? 'checked' : ''}>
+                                                <span class="adm-switch-slider"></span>
+                                            </label>
+                                        </div>
                                     </td>
-                                    <td style="text-align:right;">
-                                        <label class="adm-switch">
-                                            <input type="checkbox" class="adm-inst-toggle-switch" data-id="${a.id}" ${a.status === 'approved' ? 'checked' : ''}>
-                                            <span class="adm-switch-slider"></span>
-                                        </label>
+                                    <td style="text-align:center; white-space:nowrap;">
+                                        <div style="display:flex; align-items:center; justify-content:center; gap:8px;">
+                                            <button class="adm-inst-edit-btn"
+                                                data-id="${a.id}"
+                                                data-name="${__esc(a.name)}"
+                                                data-code="${__esc(a.code || '')}"
+                                                data-city="${__esc(a.city || '')}"
+                                                data-creator="${__esc(a.creator_name || '')}"
+                                                data-modifier="${__esc(a.modifier_name || '')}"
+                                                style="display:inline-flex; align-items:center; gap:5px; padding:0.35rem 0.85rem; font-size:0.72rem; font-weight:700; border:none; border-radius:8px; cursor:pointer; background:linear-gradient(135deg,#6366f1,#4f46e5); color:#fff; box-shadow:0 2px 8px rgba(99,102,241,0.3); transition:all 0.2s; letter-spacing:0.02em;"
+                                                onmouseover="this.style.transform='translateY(-1px)';this.style.boxShadow='0 4px 12px rgba(99,102,241,0.45)';"
+                                                onmouseout="this.style.transform='';this.style.boxShadow='0 2px 8px rgba(99,102,241,0.3)';">
+                                                <i data-feather="edit-3" style="width:12px; height:12px;"></i> Modify
+                                            </button>
+
+                                            <button class="adm-inst-remove-btn"
+                                                data-id="${a.id}"
+                                                data-name="${__esc(a.name)}"
+                                                style="display:inline-flex; align-items:center; gap:5px; padding:0.35rem 0.85rem; font-size:0.72rem; font-weight:700; border:none; border-radius:8px; cursor:pointer; background:linear-gradient(135deg,#fee2e2,#fecaca); color:#dc2626; box-shadow:0 2px 6px rgba(239,68,68,0.15); transition:all 0.2s; letter-spacing:0.02em;"
+                                                onmouseover="this.style.background='linear-gradient(135deg,#ef4444,#dc2626)';this.style.color='#fff';this.style.transform='translateY(-1px)';this.style.boxShadow='0 4px 12px rgba(239,68,68,0.4)';"
+                                                onmouseout="this.style.background='linear-gradient(135deg,#fee2e2,#fecaca)';this.style.color='#dc2626';this.style.transform='';this.style.boxShadow='0 2px 6px rgba(239,68,68,0.15)';">
+                                                <i data-feather="trash-2" style="width:12px; height:12px;"></i> Remove
+                                            </button>
+                                        </div>
                                     </td>
-                                </tr>`).join('')}
+                                </tr>`).join('') : `<tr><td colspan="5"><div class="adm-empty" style="padding:2rem 0;"><span>📂</span>No institutes found.</div></td></tr>`}
                         </tbody>
                     </table>
                 </div>
@@ -1666,19 +1848,31 @@ function _renderInstitutes(container, active, pending) {
     _wireInstituteActions(container);
 }
 
+
 function _wireInstituteActions(container) {
-    const instAccordion = container.querySelector('#inst-register-accordion');
-    if (instAccordion) {
-        instAccordion.querySelector('.adm-accordion-header').onclick = () => instAccordion.classList.toggle('open');
+    // Accordion toggles
+    container.querySelector('#inst-register-accordion')?.querySelector('.adm-accordion-header')?.addEventListener('click', function() {
+        container.querySelector('#inst-register-accordion').classList.toggle('open');
+    });
+    container.querySelector('#inst-active-accordion')?.querySelector('.adm-accordion-header')?.addEventListener('click', function() {
+        container.querySelector('#inst-active-accordion').classList.toggle('open');
+    });
+
+    // Search
+    const searchInput = container.querySelector('#adm-inst-search');
+    const rows = container.querySelectorAll('#adm-inst-active-tbody tr');
+
+    function applyFilters() {
+        const query = (searchInput?.value || '').toLowerCase().trim();
+        rows.forEach(row => {
+            const name = (row.dataset.name || '').toLowerCase();
+            const code = (row.dataset.code || '').toLowerCase();
+            const city = (row.dataset.city || '').toLowerCase();
+            row.style.display = (!query || name.includes(query) || code.includes(query) || city.includes(query)) ? '' : 'none';
+        });
     }
-    const pendingAccordion = container.querySelector('#inst-pending-accordion');
-    if (pendingAccordion) {
-        pendingAccordion.querySelector('.adm-accordion-header').onclick = () => pendingAccordion.classList.toggle('open');
-    }
-    const activeAccordion = container.querySelector('#inst-active-accordion');
-    if (activeAccordion) {
-        activeAccordion.querySelector('.adm-accordion-header').onclick = () => activeAccordion.classList.toggle('open');
-    }
+
+    if (searchInput) searchInput.addEventListener('input', applyFilters);
 
     // Direct Register
     const regBtn = container.querySelector('#adm-in-btn');
@@ -1689,34 +1883,38 @@ function _wireInstituteActions(container) {
             const city = container.querySelector('#adm-in-city').value.trim();
             const fb = container.querySelector('#adm-in-fb');
             if (!name || !code) { fb.style.color = '#ef4444'; fb.textContent = 'Name and Code are required.'; return; }
-
             regBtn.disabled = true; fb.style.color = '#6366f1'; fb.textContent = 'Processing…';
             try {
-                const res = await authFetch(API.ADMIN_INSTITUTES, {
-                    method: 'POST',
-                    body: JSON.stringify({ name, code, city })
-                });
-                if (res.ok) {
-                    _showToast('Institute registered successfully', 'success');
-                    _loadInstitutes();
-                } else {
-                    const err = await res.json();
-                    fb.style.color = '#ef4444'; fb.textContent = err.message || 'Registration failed.';
-                }
+                const res = await authFetch(API.ADMIN_INSTITUTES, { method: 'POST', body: JSON.stringify({ name, code, city }) });
+                if (res.ok) { _showToast('Institute registered successfully', 'success'); _loadInstitutes(); }
+                else { const err = await res.json(); fb.style.color = '#ef4444'; fb.textContent = err.message || 'Registration failed.'; }
             } catch (e) { fb.style.color = '#ef4444'; fb.textContent = e.message; }
             finally { regBtn.disabled = false; }
         });
     }
 
-    // Approve Button (Review before approve)
-    container.querySelectorAll('.adm-inst-approve').forEach(btn => {
+    // Modify Button — works for ALL institutes (pending or approved)
+    container.querySelectorAll('.adm-inst-edit-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const modal = _app.querySelector('#adm-inst-edit-modal');
             const form = modal.querySelector('#adm-inst-edit-form');
-            form.querySelector('[name="name"]').value = btn.dataset.name;
-            form.querySelector('[name="code"]').value = btn.dataset.code;
-            form.querySelector('[name="city"]').value = ''; // Primary modification field
+            modal.querySelector('.adm-modal-title').textContent = 'Modify Institute';
+            form.querySelector('#adm-inst-edit-submit').textContent = 'Save Changes';
 
+            const auditEl = form.querySelector('#adm-inst-edit-audit');
+            const creator = btn.dataset.creator;
+            const modifier = btn.dataset.modifier;
+            if (creator || modifier) {
+                auditEl.style.display = 'flex';
+                auditEl.innerHTML = `
+                    ${creator ? `<div><strong>Added by:</strong> ${creator}</div>` : ''}
+                    ${modifier ? `<div><strong>Last modified by:</strong> ${modifier}</div>` : ''}
+                `;
+            } else { auditEl.style.display = 'none'; }
+
+            form.querySelector('[name="name"]').value = btn.dataset.name;
+            form.querySelector('[name="code"]').value = btn.dataset.code || '';
+            form.querySelector('[name="city"]').value = btn.dataset.city || '';
             modal.classList.add('open');
 
             form.onsubmit = async (e) => {
@@ -1727,54 +1925,73 @@ function _wireInstituteActions(container) {
                     city: form.querySelector('[name="city"]').value,
                 };
                 try {
-                    const res = await authFetch(`${API.ADMIN_INSTITUTES}/${btn.dataset.id}/approve`, {
-                        method: 'PATCH',
-                        body: JSON.stringify(updated)
-                    });
-                    if (res.ok) {
-                        modal.classList.remove('open');
-                        _showToast('Institute approved with modifications', 'success');
-                        _loadInstitutes();
-                    } else {
-                        const err = await res.json();
-                        _showToast(err.message || 'Approval failed', 'error');
-                    }
+                    const res = await authFetch(`${API.ADMIN_INSTITUTES}/${btn.dataset.id}`, { method: 'PATCH', body: JSON.stringify(updated) });
+                    if (res.ok) { modal.classList.remove('open'); _showToast('Institute updated', 'success'); _loadInstitutes(); }
+                    else { const err = await res.json(); _showToast(err.message || 'Update failed', 'error'); }
                 } catch (err) { _showToast(err.message, 'error'); }
             };
         });
     });
 
-    // Decline Button
-    container.querySelectorAll('.adm-inst-decline').forEach(btn => {
-        btn.addEventListener('click', async () => {
-            if (!confirm('Decline this institute registration?')) return;
-            try {
-                const res = await authFetch(`${API.ADMIN_INSTITUTES}/${btn.dataset.id}`, { method: 'DELETE' });
-                if (res.ok) { _showToast('Institute declined', 'info'); _loadInstitutes(); }
-            } catch (err) { _showToast(err.message, 'error'); }
-        });
-    });
-
-    // Toggle Status
+    // Toggle switch for Visibility (Active/Inactive)
     container.querySelectorAll('.adm-inst-toggle-switch').forEach(sw => {
-        sw.onchange = async () => {
+        sw.addEventListener('change', async () => {
+            const instId = sw.dataset.id;
             try {
-                const res = await authFetch(API.ADMIN_INSTITUTE_TOGGLE(sw.dataset.id), { method: 'PATCH' });
+                const res = await authFetch(`${API.ADMIN_INSTITUTES}/${instId}/toggle-status`, { method: 'PATCH' });
                 if (res.ok) {
-                    _showToast('Status updated successfully', 'success');
+                    const data = await res.json();
+                    _showToast(data.message || 'Visibility updated', 'success');
                     _loadInstitutes();
                 } else {
-                    _showToast('Failed to update status', 'error');
+                    _showToast('Failed to update visibility', 'error');
                     sw.checked = !sw.checked;
                 }
             } catch (err) {
-                _showToast('Failed to update status', 'error');
+                _showToast(err.message, 'error');
                 sw.checked = !sw.checked;
             }
-        };
+        });
     });
 
-    // Wire cancel/close for the specific modal
+    // Remove Button — two-step inline confirmation instead of browser alert
+    container.querySelectorAll('.adm-inst-remove-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            // If already in confirm state, execute delete
+            if (btn.dataset.confirming === 'true') {
+                btn.dataset.confirming = 'false';
+                btn.innerHTML = '<i data-feather="trash-2" style="width:12px;height:12px;"></i> Remove';
+                btn.style.background = 'linear-gradient(135deg,#fee2e2,#fecaca)';
+                btn.style.color = '#dc2626';
+                feather.replace();
+                try {
+                    const res = await authFetch(`${API.ADMIN_INSTITUTES}/${btn.dataset.id}`, { method: 'DELETE' });
+                    if (res.ok) { _showToast('Institute removed', 'info'); _loadInstitutes(); }
+                    else { _showToast('Failed to remove institute', 'error'); }
+                } catch (err) { _showToast(err.message, 'error'); }
+                return;
+            }
+            // First click — show confirmation state on the button
+            btn.dataset.confirming = 'true';
+            btn.innerHTML = '⚠️ Confirm Remove?';
+            btn.style.background = 'linear-gradient(135deg,#f97316,#ea580c)';
+            btn.style.color = '#fff';
+            btn.style.boxShadow = '0 2px 8px rgba(234,88,12,0.4)';
+            // Auto-reset after 3 seconds if not clicked again
+            setTimeout(() => {
+                if (btn.dataset.confirming === 'true') {
+                    btn.dataset.confirming = 'false';
+                    btn.innerHTML = '<i data-feather="trash-2" style="width:12px;height:12px;"></i> Remove';
+                    btn.style.background = 'linear-gradient(135deg,#fee2e2,#fecaca)';
+                    btn.style.color = '#dc2626';
+                    btn.style.boxShadow = '0 2px 6px rgba(239,68,68,0.15)';
+                    feather.replace();
+                }
+            }, 3000);
+        });
+    });
+
+    // Modal close
     _app.querySelector('#adm-inst-edit-close').onclick = () => _app.querySelector('#adm-inst-edit-modal').classList.remove('open');
     _app.querySelector('#adm-inst-edit-cancel').onclick = () => _app.querySelector('#adm-inst-edit-modal').classList.remove('open');
 }
@@ -2163,14 +2380,13 @@ async function _buildHierarchicalPageHtml(entity) {
                             </div>
                         </div>
                     </div>
+                    </div>
                 ` : ''}
                 ${entity !== 'workflows' ? `
-                <div class="adm-form-group" style="grid-column: span 2;">
-                    <label class="adm-label">${subLabel + ' Name'}</label>
-                    <input type="text" id="c-name" placeholder="e.g. Sub ${label}" />
-                </div>
-                ` : ''}
-                ${entity !== 'workflows' ? `
+                    <div class="adm-form-group" style="grid-column: span 2;">
+                        <label class="adm-label">${subLabel + ' Name'}</label>
+                        <input type="text" id="c-name" placeholder="e.g. Sub ${label}" />
+                    </div>
                     <div class="adm-form-group">
                         <label class="adm-label">${subLabel} Code</label>
                         <input type="text" id="c-code" placeholder="e.g. SUB_${entity === 'services' ? 'SVC' : 'SYS'}_001" />
@@ -2179,18 +2395,16 @@ async function _buildHierarchicalPageHtml(entity) {
                         <label class="adm-label">Type</label>
                         <input type="text" id="c-type" value="${entity === 'services' ? 'subservice' : 'subsystem'}" />
                     </div>
-                ` : ''}
-                ${entity === 'systems' ? `
-                    <div class="adm-form-group">
-                        <label class="adm-label">Sub-System Lead</label>
-                        <select id="c-sys-lead" class="adm-select"><option>Loading...</option></select>
+                    ${entity === 'systems' ? `
+                        <div class="adm-form-group">
+                            <label class="adm-label">Sub-System Lead</label>
+                            <select id="c-sys-lead" class="adm-select"><option>Loading...</option></select>
+                        </div>
+                    ` : ''}
+                    <div class="adm-form-group" style="grid-column: span 2;">
+                        <label class="adm-label">Description (Optional)</label>
+                        <textarea id="c-desc" rows="2" style="width:100%; padding:0.75rem; border:1px solid #e2e8f0; border-radius:8px;"></textarea>
                     </div>
-                ` : ''}
-                ${entity !== 'workflows' ? `
-                <div class="adm-form-group" style="grid-column: span 2;">
-                    <label class="adm-label">Description (Optional)</label>
-                    <textarea id="c-desc" rows="2" style="width:100%; padding:0.75rem; border:1px solid #e2e8f0; border-radius:8px;"></textarea>
-                </div>
                 ` : ''}
             </div>
 
@@ -2225,7 +2439,7 @@ function _wireHierarchicalPage(container, entity) {
     if (entity === 'workflows') {
         const stepCountInput = container.querySelector('#c-wf-step-count');
         const stepsContainer = container.querySelector('#c-wf-steps-container');
-        
+
         if (stepCountInput && stepsContainer) {
             stepCountInput.onchange = async () => {
                 const count = parseInt(stepCountInput.value) || 1;
@@ -2300,13 +2514,13 @@ function _wireHierarchicalPage(container, entity) {
         const isChild = r.value === 'child';
         formParent.style.display = isChild ? 'none' : 'grid';
         formChild.style.display = isChild ? 'grid' : 'none';
-        
+
         // Update accordion header subtitle for clarity
         const subHeader = container.querySelector('.adm-accordion-header p');
         if (subHeader) {
             subHeader.textContent = isChild ? `DEFINE ${subLabel.toUpperCase()} DETAILS` : `DEFINE ${label.toUpperCase()} DETAILS`;
         }
-        
+
         createBtn.textContent = isChild ? `Save ${subLabel}` : `Save ${label}`;
     });
 
@@ -2353,7 +2567,7 @@ function _wireHierarchicalPage(container, entity) {
                         selectEl.innerHTML = '<option value="">— Select Parent First —</option>';
                         return;
                     }
-                    const filtered = userData.filter(u => !instId || String(u.institute_id) === String(instId) || u.institute_name?.includes(instData.find(i=>i.id == instId)?.name));
+                    const filtered = userData.filter(u => !instId || String(u.institute_id) === String(instId) || u.institute_name?.includes(instData.find(i => i.id == instId)?.name));
                     // Note: Since userData from API might not have institute_id (it has institute_name), 
                     // we might need to fetch fresh if filtering fails or rely on by-institute endpoint.
                     // For now, let's use the by-institute endpoint for accuracy.
@@ -2392,7 +2606,7 @@ function _wireHierarchicalPage(container, entity) {
             const users = await res.json();
             const opts = users.map(u => `<option value="${u.id}">${__esc(u.name)} (${u.role_name || 'User'})</option>`).join('');
             selectEl.innerHTML = opts ? `<option value="">— Select Lead —</option>` + opts : '<option value="">No users found in this institute</option>';
-        } catch(e) {
+        } catch (e) {
             selectEl.innerHTML = '<option value="">Error loading users</option>';
         }
     };
@@ -2437,7 +2651,7 @@ function _wireHierarchicalPage(container, entity) {
                 if (entity === 'workflows') {
                     const workflowId = container.querySelector('#c-parent-id').value;
                     if (!workflowId) throw new Error('Please select a Workflow.');
-                    
+
                     const stepRows = container.querySelectorAll('.adm-wf-step-row');
                     const steps = [];
                     stepRows.forEach(row => {
@@ -2450,7 +2664,7 @@ function _wireHierarchicalPage(container, entity) {
                             description: row.querySelector('.wf-step-desc').value.trim() || ''
                         });
                     });
-                    
+
                     // We will send them sequentially for now or the backend should handle array
                     // Let's assume we want to send them all. 
                     // I'll update the logic below to handle either single body or array of bodies
@@ -2682,7 +2896,7 @@ function _wireHierarchicalPage(container, entity) {
 
                         const res = await authFetch(`${BASE_URL}/api/auth/admin/users/by-institute?entity_id=${id}&type=${type}`);
                         lDiv.remove();
-                        
+
                         const eligible = await res.json();
                         if (!res.ok) throw new Error(eligible.error || 'Failed to fetch users');
 
@@ -2830,7 +3044,7 @@ async function _buildSimpleListPageHtml(entity) {
         label = "Request Type";
         placeholder = "e.g. Local IT Access";
     }
-        return `
+    return `
     <!-- Add New (Accordion) -->
     <div class="adm-accordion" id="simple-create-accordion" style="margin-bottom:1.5rem; border:1px solid #e2e8f0; border-radius:12px; background:#fff; overflow:hidden;">
         <div class="adm-accordion-header" style="padding:1rem 1.25rem; background:linear-gradient(to right, #f5f3ff 20%, #fff); border-left:5px solid #6366f1; border-bottom:1px solid #f1f5f9; cursor:pointer;">

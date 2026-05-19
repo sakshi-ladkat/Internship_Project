@@ -14,6 +14,7 @@ export function RegistrationView() {
              <div class="progress-step" data-step="3"><span class="progress-step-label">Qualification</span></div>
              <div class="progress-step" data-step="4"><span class="progress-step-label">Contact</span></div>
          </div>
+         <div id="affiliated-institute-banner-wrapper" style="display:none; margin-bottom: 20px;"></div>
          <div class="form-container">
             ${User_affilation()}
             ${User_profile()}
@@ -158,6 +159,35 @@ export function initRegistration() {
                     input.style.cursor = 'text';
                 }
             });
+        }
+
+        // Update Affiliated Institute display below progress bar
+        const bannerWrapper = document.getElementById('affiliated-institute-banner-wrapper');
+        if (bannerWrapper) {
+            const instituteSelect = document.getElementById('institute');
+            const selectedVal = instituteSelect ? instituteSelect.value : '';
+            const selectedText = (instituteSelect && instituteSelect.selectedIndex >= 0) ? instituteSelect.options[instituteSelect.selectedIndex].text : '';
+
+            if (currentStep > 1 && selectedVal && selectedVal !== 'other') {
+                bannerWrapper.innerHTML = `
+                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 12px 20px; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span style="background: #e0e7ff; color: #4f46e5; padding: 6px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center;">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                            </span>
+                            <div>
+                                <div style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: #64748b; letter-spacing: 0.05em;">Selected Affiliated Institute</div>
+                                <div style="font-size: 14px; font-weight: 700; color: #1e293b;">${selectedText}</div>
+                            </div>
+                        </div>
+                        <span style="background: #e0f2fe; color: #0369a1; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 99px; text-transform: uppercase; letter-spacing: 0.02em;">Verified Affiliation</span>
+                    </div>
+                `;
+                bannerWrapper.style.display = 'block';
+            } else {
+                bannerWrapper.style.display = 'none';
+                bannerWrapper.innerHTML = '';
+            }
         }
     }
 
@@ -365,10 +395,11 @@ export function initRegistration() {
     // Initialize step states directly
     updateSteps();
 
-    // Init Edit Mode if specified in URL
+    // Init Edit/Reapply Mode if specified in URL
     async function initEditMode() {
         const urlParams = new URLSearchParams(window.location.hash.split('?')[1]);
-        if (urlParams.get('mode') === 'edit') {
+        const mode = urlParams.get('mode');
+        if (mode === 'edit' || mode === 'reapply') {
             try {
                 // Fetch app data
                 const appRes = await authFetch('/api/auth/review/my-application');
@@ -376,7 +407,7 @@ export function initRegistration() {
                 const appData = await appRes.json();
                 
                 const correctionFields = appData.application.correction_fields ? JSON.parse(appData.application.correction_fields) : [];
-                const isCorrection = appData.application.correction_required;
+                const isCorrection = mode === 'edit' && appData.application.correction_required;
                 
                 // Show Banner
                 if (isCorrection) {
@@ -393,6 +424,23 @@ export function initRegistration() {
                                 </div>
                                 <div style="color: #92400e; font-size: 0.8rem;">
                                     <strong>Reasons:</strong> ${correctionFields.join(', ')}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    formContainer.insertBefore(banner, formContainer.firstChild);
+                    if (window.feather) window.feather.replace();
+                } else if (mode === 'reapply') {
+                    const banner = document.createElement('div');
+                    banner.innerHTML = `
+                        <div style="background: #e0f2fe; border: 1px solid #bae6fd; padding: 1.25rem; border-radius: 0.75rem; margin-bottom: 2rem; display: flex; align-items: flex-start; gap: 1rem;">
+                            <div style="background: #0284c7; color: white; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                                <i data-feather="refresh-cw" style="width: 18px; height: 18px;"></i>
+                            </div>
+                            <div>
+                                <div style="font-weight: 800; color: #0369a1; font-size: 0.95rem; margin-bottom: 0.3rem;">Reapply Application</div>
+                                <div style="color: #0284c7; font-size: 0.85rem; line-height: 1.5; font-weight: 500;">
+                                    Your previous application was declined. You are reapplying now. All fields are editable, and your previous data has been preloaded for your convenience.
                                 </div>
                             </div>
                         </div>

@@ -14,12 +14,18 @@ class Institute extends Model
         'city',
         'is_active',
         'ldap_dn',
-        'has_li_coordinator'
+        'has_li_coordinator',
+        'normalized_name',
+        'is_user_suggested',
+        'created_by',
+        'modified_by',
+        'status'
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
-        'has_li_coordinator' => 'boolean'
+        'has_li_coordinator' => 'boolean',
+        'is_user_suggested' => 'boolean'
     ];
 
     /**

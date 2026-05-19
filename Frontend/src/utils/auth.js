@@ -56,6 +56,7 @@ export function logout() {
     localStorage.removeItem(REFRESH_TOKEN_KEY);
     localStorage.removeItem('user_status');
     localStorage.removeItem('user_roles');
+    localStorage.removeItem('registration_draft');
     sessionStorage.removeItem(ACCESS_TOKEN_KEY);
     sessionStorage.removeItem(ACCESS_TOKEN_FALLBACK_KEY);
     sessionStorage.clear();
@@ -92,6 +93,22 @@ export async function authFetch(url, options = {}) {
     };
 
     let res = await fetch(url, mergedOptions);
+
+    if (res.status === 403) {
+        try {
+            const clone = res.clone();
+            const data = await clone.json();
+            if (data.error === 'PROFILE_BLOCKED') {
+                localStorage.setItem('is_blocked', 'true');
+                const emailMatch = data.message ? data.message.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/) : null;
+                const adminEmail = emailMatch ? emailMatch[0] : 'admin@example.com';
+                localStorage.setItem('blocked_admin_email', adminEmail);
+                window.location.hash = '#/dashboard';
+                window.location.reload();
+                return res;
+            }
+        } catch (e) {}
+    }
 
     // If unauthorised or user not found (stale session after migration), try to refresh or logout
     if (res.status === 401 || res.status === 404) {

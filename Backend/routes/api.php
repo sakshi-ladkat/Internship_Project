@@ -33,6 +33,10 @@ Route::prefix('reference')
         Route::get('/durations', [ReferenceController::class, 'getDurations']);
     });
 
+// ── Public invitation acceptance ──────────────────────────────────────────
+Route::post('/accept-invite/verify', [App\Http\Controllers\InvitationController::class, 'verify']);
+Route::post('/accept-invite', [App\Http\Controllers\InvitationController::class, 'accept']);
+
 // ── Public auth routes ────────────────────────────────────────────────────
 Route::prefix('auth')->group(function () {
     Route::post('/otp/send', [AuthController::class , 'sendOtp']);
@@ -49,6 +53,12 @@ Route::prefix('auth')->group(function () {
             Route::post('/registration', [RegistrationController::class , 'submit']);
             Route::post('/applications/{id}/reupload-id-card', [RegistrationController::class , 'reuploadIdCard']);
             Route::get('/applications/pending-with-reminders', [WorkflowController::class, 'pendingWithReminders']);
+
+            // User Invitation Management
+            Route::get('/invitations', [App\Http\Controllers\InvitationController::class, 'index']);
+            Route::post('/invitations', [App\Http\Controllers\InvitationController::class, 'invite']);
+            Route::post('/invitations/{id}/resend', [App\Http\Controllers\InvitationController::class, 'resend']);
+            Route::post('/invitations/{id}/cancel', [App\Http\Controllers\InvitationController::class, 'cancel']);
 
             // SSH Key Management
             Route::post('/ssh-key', [App\Http\Controllers\SshKeyController::class, 'store']);
@@ -94,6 +104,7 @@ Route::prefix('auth')->group(function () {
                 Route::patch('/roles/{id}',                    [\App\Http\Controllers\AdminController::class, 'updateRole']);
                 Route::get('/users/details',                   [\App\Http\Controllers\AdminController::class, 'userDetails']);
                 Route::post('/users/assign-role',              [\App\Http\Controllers\AdminController::class, 'assignRole']);
+                Route::patch('/users/{id}/toggle-block',       [\App\Http\Controllers\AdminController::class, 'toggleUserBlock']);
 
                 // Systems, Categories, etc.
                 Route::post('/categories',                     [\App\Http\Controllers\AdminController::class, 'storeCategory']);

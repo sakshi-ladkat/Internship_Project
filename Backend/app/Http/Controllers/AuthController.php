@@ -35,7 +35,31 @@ class AuthController extends Controller
         }
 
         try {
-            $otp = $this->otpService->send($request->email, $request->ip());
+            // Check invitation validity if an invitation record exists
+            $userExists = User::where('email', $request->email)->exists();
+            if (!$userExists) {
+                $invitation = \App\Models\UserInvitation::where('email', $request->email)->first();
+
+                if ($invitation) {
+                    if ($invitation->status === 'cancelled') {
+                        return response()->json(['error' => 'This invitation has been cancelled.'], 403);
+                    }
+
+                    if ($invitation->status === 'expired' || $invitation->expires_at->isPast()) {
+                        if ($invitation->status !== 'expired') {
+                            $invitation->update(['status' => 'expired']);
+                        }
+                        return response()->json(['error' => 'This invitation has expired.'], 403);
+                    }
+
+                    if ($invitation->status !== 'pending') {
+                        return response()->json(['error' => 'This invitation is no longer active.'], 403);
+                    }
+                }
+            }
+
+            $ip = $request->ip() ?? '0.0.0.0';
+            $otp = $this->otpService->send($request->email, $ip);
 
             // Testing: Log OTP to Laravel log
             Log::info("OTP for {$request->email}: {$otp}");
@@ -43,15 +67,25 @@ class AuthController extends Controller
             // Log OTP to custom log.text for the user
             $logPath = storage_path('logs/log.text');
             $timestamp = now()->toDateTimeString();
-            \Illuminate\Support\Facades\File::append($logPath, "[$timestamp] OTP GENERATED: $otp | EMAIL: {$request->email} | IP: {$request->ip()}\n");
+            \Illuminate\Support\Facades\File::append($logPath, "[$timestamp] OTP GENERATED: $otp | EMAIL: {$request->email} | IP: {$ip}\n");
 
             Mail::to($request->email)->send(new OtpMail((string)$otp));
 
             return response()->json(['message' => 'OTP sent successfully.']);
         }
-        catch (\Exception $e) {
-            Log::error('OTP Send Error: ' . $e->getMessage(), ['email' => $request->email]);
-            return response()->json(['error' => 'Could not send OTP. Please try again later.'], 429);
+        catch (\Throwable $e) {
+            Log::error('OTP Send Error: ' . $e->getMessage(), [
+                'email' => $request->email,
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            $isRateLimit = str_contains($e->getMessage(), 'Too many requests') || str_contains($e->getMessage(), 'Please wait');
+            $statusCode = $isRateLimit ? 429 : 500;
+
+            return response()->json([
+                'error' => 'Could not send OTP. Please try again later.',
+                'debug' => config('app.debug') ? $e->getMessage() : null
+            ], $statusCode);
         }
     }
 
@@ -70,17 +104,92 @@ class AuthController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        $isValid = $this->otpService->verify($request->email, $request->otp, $request->ip());
+        $ip = $request->ip() ?? '0.0.0.0';
+        $isValid = $this->otpService->verify($request->email, $request->otp, $ip);
 
         if (!$isValid) {
             return response()->json(['error' => 'Invalid or expired OTP.'], 401);
         }
 
-        // Find or create user
-        $user = User::firstOrCreate(
-        ['email' => $request->email],
-        ['status' => 'onboarding']
-        );
+        $userExists = User::where('email', $request->email)->exists();
+        if (!$userExists) {
+            $invitation = \App\Models\UserInvitation::where('email', $request->email)->first();
+
+            if ($invitation) {
+                if ($invitation->status === 'cancelled') {
+                    return response()->json(['error' => 'This invitation has been cancelled.'], 403);
+                }
+
+                if ($invitation->status === 'expired' || $invitation->expires_at->isPast()) {
+                    if ($invitation->status !== 'expired') {
+                        $invitation->update(['status' => 'expired']);
+                    }
+                    return response()->json(['error' => 'This invitation has expired.'], 403);
+                }
+
+                if ($invitation->status !== 'pending') {
+                    return response()->json(['error' => 'This invitation is no longer active.'], 403);
+                }
+            }
+
+            // Create the new user
+            $user = User::create([
+                'email' => $request->email,
+                'status' => 'onboarding',
+            ]);
+
+            // Create user profile skeleton
+            \Illuminate\Support\Facades\DB::table('user_profiles')->insert([
+                'user_id' => $user->user_id,
+                'first_name' => 'User',
+                'last_name' => 'Member',
+                'date_of_birth' => '2000-01-01',
+                'created_at' => now(),
+                'updated_at' => now()
+            ]);
+
+            // Attach role from invitation or default 'user'
+            $roleSlug = $invitation ? ($invitation->role ?: 'user') : 'user';
+            $roleRecord = \App\Models\Role::where('slug', $roleSlug)->first();
+            if ($roleRecord) {
+                $user->roles()->attach($roleRecord->id, ['is_active' => true]);
+            }
+
+            if ($invitation) {
+                // Accept invitation
+                $invitation->update([
+                    'status' => 'accepted',
+                    'invited_user_id' => $user->user_id,
+                    'accepted_at' => now(),
+                ]);
+
+                // Log acceptance
+                \App\Models\InvitationLog::create([
+                    'invitation_id' => $invitation->id,
+                    'action' => 'accepted',
+                    'performed_by' => $user->user_id,
+                    'remarks' => 'Invitation accepted via OTP verification.'
+                ]);
+            }
+        } else {
+            $user = User::where('email', $request->email)->first();
+        }
+
+        $user->load('roles');
+
+        if ($user && $user->is_blocked) {
+            $superAdmin = \Illuminate\Support\Facades\DB::table('users as u')
+                ->join('user_roles as ur', 'u.user_id', '=', 'ur.user_id')
+                ->join('roles as r', 'ur.role_id', '=', 'r.id')
+                ->where('r.slug', 'super_admin')
+                ->first();
+            $adminEmail = $superAdmin ? $superAdmin->email : 'admin@example.com';
+
+            return response()->json([
+                'error' => 'PROFILE_BLOCKED',
+                'message' => "Your profile is restricted. To know more, contact the super admin at {$adminEmail}."
+            ], 403);
+        }
 
         $tokens = $this->authService->issueTokens($user, $request);
 
@@ -292,6 +401,8 @@ class AuthController extends Controller
             'phone_number'   => 'sometimes|string|max:30',
             'address_line_1' => 'sometimes|string|max:255',
             'address_line_2' => 'nullable|string|max:255',
+            'department'     => 'sometimes|string|max:255',
+            'other_institute'=> 'nullable|string|max:255',
         ]);
 
         if ($validator->fails()) {
@@ -312,6 +423,17 @@ class AuthController extends Controller
             \Illuminate\Support\Facades\DB::table('user_contacts')
                 ->where('user_id', $userId)
                 ->update(array_merge($contactData, ['updated_at' => now()]));
+        }
+
+        // ── Affiliation info (Department & Other Institute) ─────────────────
+        if ($request->has('department') || $request->has('other_institute')) {
+            $affData = ['updated_at' => now()];
+            if ($request->has('department')) $affData['department'] = $request->input('department');
+            if ($request->has('other_institute')) $affData['other_institute'] = $request->input('other_institute');
+
+            \Illuminate\Support\Facades\DB::table('user_affilation')
+                ->where('user_id', $userId)
+                ->update($affData);
         }
 
         return response()->json(['message' => 'Profile updated successfully.']);

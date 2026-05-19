@@ -56,6 +56,7 @@ class RegistrationController extends Controller
             $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
                 'graduationYear' => 'required|digits:4|integer|min:' . (date('Y') - 70) . '|max:2100',
                 'graduationMonth' => 'required|integer|min:1|max:12',
+                'department' => 'required|string|max:255',
             ]);
 
             if ($validator->fails()) {
@@ -72,19 +73,36 @@ class RegistrationController extends Controller
                     return response()->json(['error' => 'Please provide the custom institute name.'], 422);
                 }
 
-                $newInst = Institute::create([
-                    'name' => $otherName,
-                    'status' => 'pending',
-                    'is_active' => false // Pending approval
-                ]);
-                $instituteId = $newInst->id;
+                $normalized = trim(preg_replace('/\s+/', ' ', strtolower($otherName)));
+                $existingInst = Institute::where('normalized_name', $normalized)->first();
+
+                if ($existingInst) {
+                    $instituteId = $existingInst->id;
+                } else {
+                    // Active immediately so it appears in dropdown; admin manages name via Modify Institutes.
+                    $newInst = Institute::create([
+                        'name'              => trim($otherName),
+                        'normalized_name'   => $normalized,
+                        'is_user_suggested' => true,
+                        'created_by'        => $userId,
+                        'is_active'         => true,
+                    ]);
+                    $instituteId = $newInst->id;
+                }
             }
 
             // Sync User Affiliation logic
             if ($instituteId) {
+                // Also update users.institute_id
+                DB::table('users')->where('user_id', $userId)->update([
+                    'institute_id' => $instituteId
+                ]);
+
                 $affiliationData = [
                     'institute_id' => $instituteId,
+                    'other_institute' => $request->input('otherInstitute'),
                     'category_id' => $request->input('designation'),
+                    'department' => $request->input('department'),
                     'is_active' => true,
                     'created_at' => now(),
                     'updated_at' => now()
@@ -191,9 +209,18 @@ class RegistrationController extends Controller
                     // NEW APPLICATION (REAPPLY) logic
                     $lastRejectedApp = DB::table('applications')
                         ->where('user_id', $userId)
-                        ->where('status', 'rejected')
+                        ->whereIn('status', ['rejected', 'declined', 'final_rejected', 'final_rejection'])
                         ->orderByDesc('created_at')
                         ->first();
+
+                    if ($lastRejectedApp) {
+                        DB::table('applications')
+                            ->where('id', $lastRejectedApp->id)
+                            ->update([
+                                'status' => 'reapplied',
+                                'updated_at' => now()
+                            ]);
+                    }
 
                     $appId = uniqid('APP-');
                     $applicationId = DB::table('applications')->insertGetId([
@@ -201,9 +228,11 @@ class RegistrationController extends Controller
                         'request_id' => $requestId,
                         'application_id' => $appId,
                         'parent_application_id' => $lastRejectedApp ? $lastRejectedApp->id : null,
+                        'reapplied_from' => $lastRejectedApp ? $lastRejectedApp->application_id : null,
                         'workflow_id' => $workflowId,
                         'current_step_id' => $firstStep ? $firstStep->workflow_step_id : null,
                         'status' => 'submitted',
+                        'current_stage' => 'submitted',
                         'id_card_path' => $affiliationData['id_card_path'] ?? null,
                         'is_active' => true,
                         'retry_attempt' => DB::table('users')->where('user_id', $userId)->value('retry_count') + 1,
@@ -351,12 +380,18 @@ class RegistrationController extends Controller
                     ['user_id' => $userId],
                     [
                         'institute_id' => $instituteId,
+                        'other_institute' => $request->input('otherInstitute'),
                         'category_id' => $request->input('designation'),
                         'department' => $request->input('department'),
                         'id_card_path' => $newIdCardPath,
                         'updated_at' => now()
                     ]
                 );
+
+                // Also update users.institute_id
+                DB::table('users')->where('user_id', $userId)->update([
+                    'institute_id' => $instituteId
+                ]);
 
                 // Update application record path as well
                 DB::table('applications')->where('id', $applicationId)->update(['id_card_path' => $newIdCardPath]);

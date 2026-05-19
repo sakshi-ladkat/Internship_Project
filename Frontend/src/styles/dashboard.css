@@ -38,12 +38,12 @@
     margin-top: 1rem;
     border-radius: 1rem;
     /* Rounded corners since it has margins */
-    padding-left: 1.25rem;
+    padding-left: 0.75rem;
     /* Padding for the sidebar content */
-    padding-right: 0.5rem;
+    padding-right: 0.75rem;
     position: sticky;
     top: 1rem;
-    overflow-y: auto;
+    overflow: hidden; /* Prevent sidebar itself from scrolling */
     scrollbar-width: thin;
     scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
 }
@@ -54,8 +54,14 @@
     flex-direction: column;
     align-items: center;
     text-align: center;
-    padding: 2.5rem 1.5rem 2rem;
+    padding: 2.5rem 0.75rem 2rem;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    flex-shrink: 0; /* Never shrink — stays pinned at top */
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--primary-600); /* Match sidebar bg so it covers scrolled content */
+    border-radius: 1rem 1rem 0 0; /* Maintain rounded top corners */
 }
 
 .sb-avatar {
@@ -144,8 +150,17 @@
 }
 
 /* ── Generic section wrapper ── */
+.sb-nav-scroll {
+    flex: 1;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+    display: flex;
+    flex-direction: column;
+}
+
 .sb-section {
-    padding: 1.25rem 1.5rem;
+    padding: 1.25rem 0.75rem;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
@@ -161,6 +176,7 @@
     color: rgba(255, 255, 255, 0.45);
     letter-spacing: 0.1em;
     margin-bottom: 0.85rem;
+    margin-left: 1.25rem;
 }
 
 /* Roles */
@@ -190,6 +206,7 @@
     width: 100%;
     display: flex;
     align-items: center;
+    justify-content: flex-start;
     gap: 0.85rem;
     padding: 0.85rem 1.25rem;
     background: transparent;
@@ -202,6 +219,18 @@
     text-align: left;
     margin-bottom: 0.5rem;
     border-radius: 0.75rem;
+    line-height: 1.2;
+}
+
+.sb-nav-btn svg,
+.sb-nav-btn i {
+    width: 18px;
+    height: 18px;
+    stroke-width: 2.2px;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .sb-nav-btn:hover {
@@ -519,7 +548,7 @@
     background: white;
     border-radius: 1.25rem;
     border: 1px solid #e2e8f0;
-    padding: 2.5rem;
+    padding: 1.5rem 1.5rem 0.1rem;
     box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);
 }
 
@@ -626,7 +655,7 @@
 .trk-step {
     display: flex;
     gap: 1.5rem;
-    margin-bottom: 2rem;
+    margin-bottom: 2.5rem;
     position: relative;
     z-index: 2;
     opacity: 0;

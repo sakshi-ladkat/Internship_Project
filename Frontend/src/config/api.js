@@ -48,6 +48,13 @@ export const API = {
     // ── SSH Key ─────────────────────────────────────────────────────────────
     SSH_KEY_STORE:              `${BASE_URL}/api/auth/ssh-key`,
 
+    // ── Invitations ─────────────────────────────────────────────────────────
+    INVITATIONS:                 `${BASE_URL}/api/auth/invitations`,
+    INVITATION_RESEND: (id)  =>  `${BASE_URL}/api/auth/invitations/${id}/resend`,
+    INVITATION_CANCEL: (id)  =>  `${BASE_URL}/api/auth/invitations/${id}/cancel`,
+    INVITATION_VERIFY:           `${BASE_URL}/api/accept-invite/verify`,
+    INVITATION_ACCEPT:           `${BASE_URL}/api/accept-invite`,
+
     // ── Helper to build arbitrary URLs ─────────────────────────────────────
     url: (path) => `${BASE_URL}${path}`,
 };
