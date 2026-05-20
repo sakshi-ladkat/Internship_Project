@@ -117,14 +117,17 @@ class WorkflowController extends Controller
         }
 
         $data = (array) $profile;
-        
+
         $duplicates = $duplicateService->findDuplicatesByUserId($userId);
         $highestRisk = 'none';
-        
+
         foreach ($duplicates as $dup) {
-            if ($dup['risk_level'] === 'high') $highestRisk = 'high';
-            else if ($dup['risk_level'] === 'medium' && $highestRisk !== 'high') $highestRisk = 'medium';
-            else if ($dup['risk_level'] === 'low' && $highestRisk === 'none') $highestRisk = 'low';
+            if ($dup['risk_level'] === 'high')
+                $highestRisk = 'high';
+            else if ($dup['risk_level'] === 'medium' && $highestRisk !== 'high')
+                $highestRisk = 'medium';
+            else if ($dup['risk_level'] === 'low' && $highestRisk === 'none')
+                $highestRisk = 'low';
         }
 
         $data['duplicate_warnings'] = [
@@ -212,6 +215,8 @@ class WorkflowController extends Controller
         $cols = [
             'app.id',
             'app.application_id',
+            'app.parent_application_id',
+            'app.reapplied_from',
             'app.user_id as applicant_user_id',
             DB::raw("COALESCE(CONCAT(up.first_name, ' ', up.last_name), u.email) as applicant_name"),
             'u.email as applicant_email',
@@ -369,9 +374,9 @@ class WorkflowController extends Controller
                 ->where('app.is_active', true)
                 ->where('app.status', '!=', 'correction_required')
                 // Filter: LI-Coordinator sees applications from their institute (dual routing: applicant vs system)
-                ->where(function($q) use ($userId) {
+                ->where(function ($q) use ($userId) {
                     // 1. Identity Step: Match by Applicant's Institute
-                    $q->where(function($sub) use ($userId) {
+                    $q->where(function ($sub) use ($userId) {
                         $sub->where('ws.step_action', 'approve_identity')
                             ->whereRaw('EXISTS (
                                 SELECT 1 FROM user_affilation ua
@@ -380,8 +385,8 @@ class WorkflowController extends Controller
                                 AND ua.institute_id = app_ua.institute_id
                             )', [$userId]);
                     })
-                    // 2. Technical/Final Step: Match by System's Institute
-                    ->orWhere(function($sub) use ($userId) {
+                        // 2. Technical/Final Step: Match by System's Institute
+                        ->orWhere(function ($sub) use ($userId) {
                         $sub->where('ws.step_action', '!=', 'approve_identity')
                             ->whereRaw('EXISTS (
                                 SELECT 1 FROM user_affilation ua
@@ -391,8 +396,8 @@ class WorkflowController extends Controller
                                 AND (s.id = app.assigned_system_id OR s.id = sub.system_id)
                             )', [$userId]);
                     })
-                    // 3. Fallback: Default Coordinator sees everything in the pool
-                    ->orWhereRaw('EXISTS (
+                        // 3. Fallback: Default Coordinator sees everything in the pool
+                        ->orWhereRaw('EXISTS (
                         SELECT 1 FROM user_roles ur
                         JOIN roles r ON ur.role_id = r.id
                         WHERE ur.user_id = ?
@@ -422,7 +427,7 @@ class WorkflowController extends Controller
             ->where('app.status', '!=', 'correction_required')
             ->select($cols)
             ->get();
-        
+
         $apps = $apps->merge($assignedApps);
 
         $apps = $apps->unique('id')->values();
@@ -436,12 +441,13 @@ class WorkflowController extends Controller
                 ->leftJoin('user_profiles as up', 'u.user_id', '=', 'up.user_id')
                 ->join('workflow_steps as ws', 'aa.workflow_step_id', '=', 'ws.workflow_step_id')
                 ->join('roles as r', 'ws.role_id', '=', 'r.id')
-                ->where(function($q) use ($app) {
+                ->where(function ($q) use ($app) {
                     $q->where('aa.application_id', $app->id);
                     if (isset($app->parent_application_id) && $app->parent_application_id) {
                         $q->orWhere('aa.application_id', $app->parent_application_id);
                     }
                 })
+                ->where('aa.status', '!=', 'declined')
                 ->whereNotNull('aa.approved_by')
                 ->select([
                     'aa.recommended_services',
@@ -460,11 +466,9 @@ class WorkflowController extends Controller
                 ->join('applications as past_app', 'al.application_id', '=', 'past_app.id')
                 ->join('users as u', 'al.action_by', '=', 'u.user_id')
                 ->leftJoin('user_profiles as up', 'u.user_id', '=', 'up.user_id')
-                ->leftJoin('user_roles as ur', function($join) {
-                    $join->on('u.user_id', '=', 'ur.user_id')->where('ur.is_active', true);
-                })
-                ->leftJoin('roles as r', 'ur.role_id', '=', 'r.id')
-                ->where(function($q) use ($app) {
+                ->leftJoin('workflow_steps as ws', 'al.workflow_step_id', '=', 'ws.workflow_step_id')
+                ->leftJoin('roles as r', 'ws.role_id', '=', 'r.id')
+                ->where(function ($q) use ($app) {
                     $q->where('al.application_id', $app->id);
                     if (isset($app->parent_application_id) && $app->parent_application_id) {
                         $q->orWhere('al.application_id', $app->parent_application_id);
@@ -747,9 +751,9 @@ class WorkflowController extends Controller
                         ->join('systems as s', 'sub.system_id', '=', 's.id')
                         ->where('sub.id', $assignedSubsystemId)
                         ->value('s.institute_id');
-                    
+
                     if ($systemInstituteId && $actorAffiliation->institute_id != $systemInstituteId) {
-                         return response()->json(['error' => 'You are not the LI-Coordinator for the institute that owns this system.'], 403);
+                        return response()->json(['error' => 'You are not the LI-Coordinator for the institute that owns this system.'], 403);
                     }
                 }
             }
@@ -792,16 +796,16 @@ class WorkflowController extends Controller
             if ($request->filled('ligo_member') && in_array($request->ligo_member, ['yes', 'no']) && $this->hasApplicationColumn('ligo_member')) {
                 $appUpdates['ligo_member'] = $request->ligo_member;
             }
-        // Fetch role ID for final duration update logic
-        $liCoordinatorRoleId = DB::table('roles')->where('slug', 'li_coordinator')->value('id');
-        $isLiCoordinator = ($liCoordinatorRoleId && $stepRoleId == $liCoordinatorRoleId);
-        
-        if ($request->filled('duration') && $this->hasApplicationColumn('duration')) {
-            // User requested: only update main applications table if LI-Coordinator is approving
-            if ($isLiCoordinator && $action === 'approve') {
-                $appUpdates['duration'] = $request->duration;
+            // Fetch role ID for final duration update logic
+            $liCoordinatorRoleId = DB::table('roles')->where('slug', 'li_coordinator')->value('id');
+            $isLiCoordinator = ($liCoordinatorRoleId && $stepRoleId == $liCoordinatorRoleId);
+
+            if ($request->filled('duration') && $this->hasApplicationColumn('duration')) {
+                // User requested: only update main applications table if LI-Coordinator is approving
+                if ($isLiCoordinator && $action === 'approve') {
+                    $appUpdates['duration'] = $request->duration;
+                }
             }
-        }
 
             if ($request->filled('subsystem_id') && $this->hasApplicationColumn('assigned_subsystem_id')) {
                 $appUpdates['assigned_subsystem_id'] = $request->subsystem_id;
@@ -823,7 +827,7 @@ class WorkflowController extends Controller
                 }
 
                 $result = $lifecycleService->moveToNextStep($id, $userId, $request->assigned_to, $request->remarks, $services, $request->duration);
-                
+
                 if ($result['status'] === 'final_approved') {
                     // Mark as provisioning pending if it was the last step
                     DB::table('applications')->where('id', $id)->update([
@@ -1190,7 +1194,7 @@ class WorkflowController extends Controller
             if ($approvals->has($step->workflow_step_id)) {
                 $approval = (object) $approvals->get($step->workflow_step_id);
                 $step->status = $approval->status;
-                
+
                 if ($step->status === 'approved') {
                     if ($step->step_action === 'approve_identity') {
                         $step->status_name = "Identity Approved by " . ($step->role_name ?? 'Reviewer');
@@ -1212,16 +1216,20 @@ class WorkflowController extends Controller
                     $rs = json_decode($approval->recommended_services, true);
                     $names = [];
                     if (!empty($rs['service_ids'])) {
-                        foreach ($rs['service_ids'] as $sid) if (isset($svcMap[$sid])) $names[] = $svcMap[$sid];
+                        foreach ($rs['service_ids'] as $sid)
+                            if (isset($svcMap[$sid]))
+                                $names[] = $svcMap[$sid];
                     }
                     if (!empty($rs['subservice_ids'])) {
-                        foreach ($rs['subservice_ids'] as $sid) if (isset($subMap[$sid])) $names[] = $subMap[$sid];
+                        foreach ($rs['subservice_ids'] as $sid)
+                            if (isset($subMap[$sid]))
+                                $names[] = $subMap[$sid];
                     }
                     $step->recommended_services = implode(', ', $names);
                 }
             } else {
                 $step->status = 'pending';
-                
+
                 // If the entire application is already rejected/declined, other pending steps should reflect that
                 if ($app && in_array($app->status, ['rejected', 'declined', 'final_rejection'])) {
                     if ($app->current_step_id == $step->workflow_step_id) {
@@ -1377,5 +1385,198 @@ class WorkflowController extends Controller
         } catch (\Exception $e) {
             return response()->json(['error' => 'Failed to process resubmission: ' . $e->getMessage()], 500);
         }
+    }
+
+    /**
+     * GET /api/review/applications/{id}/diff
+     * Returns side-by-side comparison of current application with its parent (reapplied from).
+     */
+    public function diff(Request $request, int $id): JsonResponse
+    {
+        $app = DB::table('applications')->where('id', $id)->first();
+        if (!$app) {
+            return response()->json(['error' => 'Application not found'], 404);
+        }
+
+        if (!$app->parent_application_id) {
+            return response()->json(['has_comparison' => false]);
+        }
+
+        $current = $this->getApplicationDetailsForDiff($id);
+        $previous = $this->getApplicationDetailsForDiff($app->parent_application_id);
+
+        if (!$current || !$previous) {
+            return response()->json(['has_comparison' => false]);
+        }
+
+        return response()->json([
+            'has_comparison' => true,
+            'current' => $current,
+            'previous' => $previous
+        ]);
+    }
+
+    private function getApplicationDetailsForDiff(int $appId)
+    {
+        $app = DB::table('applications as app')
+            ->leftJoin('systems as sys', 'app.assigned_system_id', '=', 'sys.id')
+            ->leftJoin('subsystems as subsys', 'app.assigned_subsystem_id', '=', 'subsys.id')
+            ->where('app.id', $appId)
+            ->select([
+                'app.id',
+                'app.application_id',
+                'app.ligo_member',
+                'app.duration',
+                'sys.name as system_name',
+                'subsys.name as subsystem_name',
+                'app.id_card_path',
+                'app.user_id',
+                'app.profile_snapshot'
+            ])
+            ->first();
+
+        if (!$app)
+            return null;
+
+        $snapshot = $app->profile_snapshot ? json_decode($app->profile_snapshot, true) : null;
+
+        $name = 'N/A';
+        $designation = 'N/A';
+        $institute = 'N/A';
+        $qualification = 'N/A';
+        $phone = 'N/A';
+        $country = 'N/A';
+        $supervisorName = 'Not Assigned / Unknown';
+        $idCardPath = $app->id_card_path;
+
+        if ($snapshot) {
+            if (!empty($snapshot['personal'])) {
+                $p = $snapshot['personal'];
+                $name = implode(' ', array_filter([$p['title'] ?? null, $p['first_name'] ?? null, $p['middle_name'] ?? null, $p['last_name'] ?? null]));
+            }
+            if (!empty($snapshot['affiliation'])) {
+                $designation = $snapshot['affiliation']['category_name'] ?? 'N/A';
+                $institute = $snapshot['affiliation']['institute_name'] ?? 'N/A';
+                if (!empty($snapshot['affiliation']['id_card_path'])) {
+                    $idCardPath = $snapshot['affiliation']['id_card_path'];
+                }
+            }
+            if (!empty($snapshot['qualification'])) {
+                $q = $snapshot['qualification'];
+                $qualification = implode(', ', array_filter([$q['highest_qualification'] ?? null, $q['field_of_study'] ?? null, $q['university'] ?? null]));
+            }
+            if (!empty($snapshot['contact'])) {
+                $phone = $snapshot['contact']['phone_number'] ?? 'N/A';
+                $country = $snapshot['contact']['country_name'] ?? 'N/A';
+            }
+            $supervisorName = $snapshot['supervisor'] ?? 'Not Assigned / Unknown';
+        } else {
+            $profile = DB::table('user_profiles')->where('user_id', $app->user_id)->first();
+            if ($profile) {
+                $name = implode(' ', array_filter([$profile->title, $profile->first_name, $profile->middle_name, $profile->last_name]));
+            }
+            $aff = DB::table('user_affilation as ua')
+                ->leftJoin('institutes as i', 'ua.institute_id', '=', 'i.id')
+                ->leftJoin('categories as c', 'ua.category_id', '=', 'c.id')
+                ->where('ua.user_id', $app->user_id)
+                ->select(['i.name as institute_name', 'c.name as category_name'])
+                ->first();
+            if ($aff) {
+                $designation = $aff->category_name ?? 'N/A';
+                $institute = $aff->institute_name ?? 'N/A';
+            }
+            $qual = DB::table('user_qualification')->where('user_id', $app->user_id)->first();
+            if ($qual) {
+                $qualification = implode(', ', array_filter([$qual->highest_qualification, $qual->field_of_study, $qual->university]));
+            }
+            $con = DB::table('user_contacts')->where('user_id', $app->user_id)->first();
+            if ($con) {
+                $phone = $con->phone_number ?? 'N/A';
+                $country = $con->country_name ?? 'N/A';
+            }
+
+            $supervisorRoleId = DB::table('roles')->where('slug', self::SUPERVISOR_ROLE_SLUG)->value('id');
+            $supervisorStep = DB::table('workflow_steps')->where('role_id', $supervisorRoleId)->first();
+            if ($supervisorStep) {
+                $approval = DB::table('application_approvals as aa')
+                    ->join('users as u', 'aa.approved_by', '=', 'u.user_id')
+                    ->leftJoin('user_profiles as up', 'u.user_id', '=', 'up.user_id')
+                    ->where('aa.application_id', $appId)
+                    ->where('aa.workflow_step_id', $supervisorStep->workflow_step_id)
+                    ->select(DB::raw("COALESCE(CONCAT(up.first_name, ' ', up.last_name), u.email) as supervisor_name"))
+                    ->first();
+                if ($approval) {
+                    $supervisorName = $approval->supervisor_name;
+                } else {
+                    $log = DB::table('application_logs as al')
+                        ->join('users as u', 'al.action_by', '=', 'u.user_id')
+                        ->leftJoin('user_profiles as up', 'u.user_id', '=', 'up.user_id')
+                        ->where('al.application_id', $appId)
+                        ->where('al.workflow_step_id', $supervisorStep->workflow_step_id)
+                        ->select(DB::raw("COALESCE(CONCAT(up.first_name, ' ', up.last_name), u.email) as supervisor_name"))
+                        ->first();
+                    if ($log) {
+                        $supervisorName = $log->supervisor_name;
+                    }
+                }
+            }
+            if ($supervisorName === 'Not Assigned / Unknown') {
+                $currSuper = DB::table('user_supervisors as us')
+                    ->join('users as u', 'us.supervisor_id', '=', 'u.user_id')
+                    ->leftJoin('user_profiles as up', 'u.user_id', '=', 'up.user_id')
+                    ->where('us.user_id', $app->user_id)
+                    ->where('us.is_active', true)
+                    ->select(DB::raw("COALESCE(CONCAT(up.first_name, ' ', up.last_name), u.email) as supervisor_name"))
+                    ->first();
+                if ($currSuper) {
+                    $supervisorName = $currSuper->supervisor_name;
+                }
+            }
+        }
+
+        // Recommended services
+        $serviceIds = [];
+        $subserviceIds = [];
+        $approvals = DB::table('application_approvals')
+            ->where('application_id', $appId)
+            ->whereNotNull('recommended_services')
+            ->get();
+        foreach ($approvals as $appr) {
+            $rs = json_decode($appr->recommended_services, true);
+            if (!empty($rs['service_ids'])) {
+                $serviceIds = array_unique(array_merge($serviceIds, $rs['service_ids']));
+            }
+            if (!empty($rs['subservice_ids'])) {
+                $subserviceIds = array_unique(array_merge($subserviceIds, $rs['subservice_ids']));
+            }
+        }
+
+        $services = [];
+        if (!empty($serviceIds)) {
+            $services = DB::table('services')->whereIn('id', $serviceIds)->pluck('name')->toArray();
+        }
+        $subservices = [];
+        if (!empty($subserviceIds)) {
+            $subservices = DB::table('subservices')->whereIn('id', $subserviceIds)->pluck('name')->toArray();
+        }
+
+        return [
+            'application_id' => $app->application_id,
+            'name' => $name,
+            'designation' => $designation,
+            'institute' => $institute,
+            'qualification' => $qualification,
+            'phone' => $phone,
+            'country' => $country,
+            'supervisor' => $supervisorName,
+            'ligo_member' => $app->ligo_member === 'yes' ? 'Yes' : 'No',
+            'duration' => $app->duration ? $app->duration : 'Not specified',
+            'system' => $app->system_name ? $app->system_name : 'Not Assigned',
+            'subsystem' => $app->subsystem_name ? $app->subsystem_name : 'Not Assigned',
+            'services' => !empty($services) ? implode(', ', $services) : 'None',
+            'subservices' => !empty($subservices) ? implode(', ', $subservices) : 'None',
+            'id_card_filename' => $idCardPath ? basename($idCardPath) : 'None',
+            'id_card_path' => $idCardPath
+        ];
     }
 }

@@ -51,7 +51,7 @@ export function router() {
     if (userStatus === 'onboarding') {
       window.location.hash = '#/registration';
     } else {
-      window.location.hash = isSuperAdmin ? '#/admin' : '#/dashboard';
+      window.location.hash = '#/dashboard';
     }
     return;
   }
@@ -59,10 +59,6 @@ export function router() {
   if ((baseHash === '#/dashboard' || baseHash === '#/dashboard-profile') && isLoggedIn()) {
     if (userStatus === 'onboarding') {
       window.location.hash = '#/registration';
-      return;
-    }
-    if (isSuperAdmin && baseHash !== '#/dashboard-profile') {
-      window.location.hash = '#/admin';
       return;
     }
   }
@@ -75,7 +71,7 @@ export function router() {
     // Allow reupload_required/edit mode/reapply to access registration even if already "filled"
     const isEditMode = queryStr && (queryStr.includes('mode=edit') || queryStr.includes('mode=reapply'));
     if (!isEditMode && (userStatus === 'filled' || userStatus === 'completed' || userStatus === 'active')) {
-      window.location.hash = isSuperAdmin ? '#/admin' : '#/dashboard';
+      window.location.hash = '#/dashboard';
       return;
     }
   }

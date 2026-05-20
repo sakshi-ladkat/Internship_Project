@@ -68,6 +68,9 @@ export function initRegistration() {
                         input.checked = draft[key];
                     } else if (input.type !== 'file') {
                         input.value = draft[key];
+                        if (input.tagName === 'SELECT') {
+                            input.dispatchEvent(new Event('change'));
+                        }
                     }
                 }
             });
@@ -252,6 +255,10 @@ export function initRegistration() {
                 const designationText = document.querySelector(`#designation option[value="${designation}"]`)?.textContent.toLowerCase() || '';
                 const isStudent = designationText.includes('student');
 
+                const urlParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
+                const mode = urlParams.get('mode');
+                const isEditOrReapply = mode === 'edit' || mode === 'reapply';
+
                 if (fileInput && fileInput.files[0]) {
                     const file = fileInput.files[0];
                     if (file.size > 2 * 1024 * 1024) { // 2MB
@@ -262,7 +269,7 @@ export function initRegistration() {
                     }
                     console.log('Attaching id_card file:', file.name);
                     formData.append('id_card', file);
-                } else if (isStudent) {
+                } else if (isStudent && !isEditOrReapply) {
                     alert('Please select an Identity Card file.');
                     nextBtn.disabled = false;
                     nextBtn.textContent = 'Submit';
@@ -466,13 +473,18 @@ export function initRegistration() {
                     draft.gender = meData.profile.gender || '';
                 }
                 if (meData.contact) {
-                    // For dropdowns expecting IDs, these might not perfectly map back to string names
+                    draft.continent = meData.contact.continent_id || '';
+                    draft.country = meData.contact.country_id || '';
+                    draft.address1 = meData.contact.address_line_1 || '';
+                    draft.address2 = meData.contact.address_line_2 || '';
+                    draft.address3 = meData.contact.address_line_3 || '';
                     draft.city = meData.contact.city || '';
                     draft.state = meData.contact.state || '';
-                    draft.postalCode = meData.contact.postal_code || '';
+                    draft.zipcode = meData.contact.postal_code || '';
+                    draft.phoneCode = meData.contact.country_code || '';
+                    draft.cityCode = meData.contact.city_code || '';
                     draft.phoneNumber = meData.contact.phone_number || '';
-                    draft.addressLine1 = meData.contact.address_line_1 || '';
-                    draft.addressLine2 = meData.contact.address_line_2 || '';
+                    draft.faxNumber = meData.contact.fax_number || '';
                 }
                 if (meData.qualifications && meData.qualifications.length > 0) {
                     const q = meData.qualifications[0];
@@ -483,9 +495,12 @@ export function initRegistration() {
                     draft.graduationMonth = q.graduation_month || '';
                 }
                 if (meData.affiliation) {
-                    draft.instituteCategory = meData.affiliation.category_id || '';
-                    draft.instituteId = meData.affiliation.institute_id || '';
+                    draft.institute = meData.affiliation.institute_id || '';
+                    draft.designation = meData.affiliation.category_id || '';
                     draft.department = meData.affiliation.department || '';
+                }
+                if (meData.supervisor) {
+                    draft.supervisorSelect = meData.supervisor.supervisor_id || '';
                 }
 
                 localStorage.setItem('registration_draft', JSON.stringify(draft));

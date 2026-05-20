@@ -33,7 +33,7 @@ class AdminController extends Controller
     }
 
     // ── Guard: only super_admin may call these endpoints ─────────────────────
-    private function checkAdmin(Request $request): ?JsonResponse
+    private function checkAdmin(Request $request, ?string $requiredPermission = null): ?JsonResponse
     {
         $userId = $request->auth_user_id;
         $isAdmin = DB::table('user_roles as ur')
@@ -43,7 +43,41 @@ class AdminController extends Controller
             ->where('ur.is_active', true)
             ->exists();
 
-        return $isAdmin ? null : response()->json(['error' => 'Forbidden'], 403);
+        if ($isAdmin) {
+            return null;
+        }
+
+        if ($requiredPermission) {
+            $hasPerm = DB::table('user_roles as ur')
+                ->join('roles_permissions as rp', 'ur.role_id', '=', 'rp.role_id')
+                ->join('permissions as p', 'rp.permission_id', '=', 'p.id')
+                ->where('ur.user_id', $userId)
+                ->where('ur.is_active', true)
+                ->where('p.slug', $requiredPermission)
+                ->exists();
+            if ($hasPerm) {
+                return null;
+            }
+        } else {
+            $ADMIN_PERMISSIONS = [
+                'view_applications', 'manage_users', 'manage_roles', 'assign_roles', 
+                'approve_identity', 'manage_institutes', 'manage_systems', 'manage_services', 
+                'manage_categories', 'manage_durations', 'manage_salutations', 'manage_requests', 
+                'system_settings', 'view_logs', 'manage_workflows'
+            ];
+            $hasAnyPerm = DB::table('user_roles as ur')
+                ->join('roles_permissions as rp', 'ur.role_id', '=', 'rp.role_id')
+                ->join('permissions as p', 'rp.permission_id', '=', 'p.id')
+                ->where('ur.user_id', $userId)
+                ->where('ur.is_active', true)
+                ->whereIn('p.slug', $ADMIN_PERMISSIONS)
+                ->exists();
+            if ($hasAnyPerm) {
+                return null;
+            }
+        }
+
+        return response()->json(['error' => 'Forbidden'], 403);
     }
 
     // ════════════════════════════════════════════════════════════
@@ -69,11 +103,156 @@ class AdminController extends Controller
             ->leftJoin('categories as cat', 'ua.category_id', '=', 'cat.id')
             ->leftJoin('workflow_steps as ws', 'app.current_step_id', '=', 'ws.workflow_step_id');
 
+        $userId = $request->auth_user_id;
+        $isSuperAdmin = DB::table('user_roles as ur')
+            ->join('roles as r', 'ur.role_id', '=', 'r.id')
+            ->where('ur.user_id', $userId)
+            ->where('r.slug', 'super_admin')
+            ->where('ur.is_active', true)
+            ->exists();
+
+        if (!$isSuperAdmin) {
+            $userRoleIds = DB::table('user_roles')
+                ->where('user_id', $userId)
+                ->where('is_active', true)
+                ->pluck('role_id');
+
+            $supervisorRoleId = DB::table('roles')->where('slug', 'supervisor')->value('id');
+            $systemLeadRoleId = DB::table('roles')->where('slug', 'system_lead')->value('id');
+            $subsystemLeadRoleId = DB::table('roles')->where('slug', 'subsystem_lead')->value('id');
+            $liCoordinatorRoleId = DB::table('roles')->where('slug', 'li_coordinator')->value('id');
+
+            $appsQuery->where(function($q) use ($userId, $userRoleIds, $supervisorRoleId, $systemLeadRoleId, $subsystemLeadRoleId, $liCoordinatorRoleId) {
+                // 1. Generic pool roles
+                $targetedRoleIds = array_filter([$supervisorRoleId, $systemLeadRoleId, $subsystemLeadRoleId, $liCoordinatorRoleId]);
+                $poolRoleIds = $userRoleIds->filter(fn($rid) => !in_array($rid, $targetedRoleIds))->values();
+                if ($poolRoleIds->isNotEmpty()) {
+                    $q->orWhere(function($sub) use ($poolRoleIds) {
+                        $sub->whereIn('ws.role_id', $poolRoleIds)
+                            ->whereNull('app.current_assignee_id')
+                            ->where('app.is_active', true)
+                            ->where('app.status', '!=', 'correction_required');
+                    });
+                }
+
+                // 2. Personal supervisor pending applications
+                if ($supervisorRoleId && $userRoleIds->contains($supervisorRoleId)) {
+                    $q->orWhere(function($sub) use ($userId, $supervisorRoleId) {
+                        $sub->where('ws.role_id', $supervisorRoleId)
+                            ->whereNull('app.current_assignee_id')
+                            ->where('app.is_active', true)
+                            ->where('app.status', '!=', 'correction_required')
+                            ->whereRaw('EXISTS (
+                                SELECT 1 FROM user_supervisors usup
+                                WHERE usup.user_id = app.user_id
+                                AND usup.supervisor_id = ?
+                                AND usup.is_active = 1
+                            )', [$userId]);
+                    });
+                }
+
+                // 3. System lead pending applications
+                if ($systemLeadRoleId && $userRoleIds->contains($systemLeadRoleId)) {
+                    $q->orWhere(function($sub) use ($userId, $systemLeadRoleId) {
+                        $sub->where('ws.role_id', $systemLeadRoleId)
+                            ->whereNull('app.current_assignee_id')
+                            ->where('app.is_active', true)
+                            ->where('app.status', '!=', 'correction_required')
+                            ->whereRaw('EXISTS (
+                                SELECT 1 FROM entity_assignments ea
+                                LEFT JOIN subsystems sbs ON app.assigned_subsystem_id = sbs.id
+                                WHERE ea.entity_type = "system"
+                                AND ea.user_id = ?
+                                AND (ea.entity_id = app.assigned_system_id OR ea.entity_id = sbs.system_id)
+                                AND ea.is_active = 1
+                            )', [$userId]);
+                    });
+                }
+
+                // 4. Subsystem lead pending applications
+                if ($subsystemLeadRoleId && $userRoleIds->contains($subsystemLeadRoleId)) {
+                    $q->orWhere(function($sub) use ($userId, $subsystemLeadRoleId) {
+                        $sub->where('ws.role_id', $subsystemLeadRoleId)
+                            ->whereNull('app.current_assignee_id')
+                            ->where('app.is_active', true)
+                            ->where('app.status', '!=', 'correction_required')
+                            ->whereRaw('EXISTS (
+                                SELECT 1 FROM entity_assignments ea
+                                WHERE ea.entity_type = "subsystem"
+                                AND ea.user_id = ?
+                                AND (ea.entity_id = app.assigned_subsystem_id OR app.assigned_subsystem_id IS NULL)
+                                AND ea.is_active = 1
+                            )', [$userId]);
+                    });
+                }
+
+                // 5. LI-Coordinator pending applications
+                if ($liCoordinatorRoleId && $userRoleIds->contains($liCoordinatorRoleId)) {
+                    $q->orWhere(function($sub) use ($userId, $liCoordinatorRoleId) {
+                        $sub->where('ws.role_id', $liCoordinatorRoleId)
+                            ->whereNull('app.current_assignee_id')
+                            ->where('app.is_active', true)
+                            ->where('app.status', '!=', 'correction_required')
+                            ->where(function($liQ) use ($userId) {
+                                // Identity
+                                $liQ->where(function($subId) use ($userId) {
+                                    $subId->where('ws.step_action', 'approve_identity')
+                                        ->whereRaw('EXISTS (
+                                            SELECT 1 FROM user_affilation ua
+                                            JOIN user_affilation app_ua ON app_ua.user_id = app.user_id
+                                            WHERE ua.user_id = ?
+                                            AND ua.institute_id = app_ua.institute_id
+                                        )', [$userId]);
+                                })
+                                // Technical
+                                ->orWhere(function($subTech) use ($userId) {
+                                    $subTech->where('ws.step_action', '!=', 'approve_identity')
+                                        ->whereRaw('EXISTS (
+                                            SELECT 1 FROM user_affilation ua
+                                            JOIN systems s ON ua.institute_id = s.institute_id
+                                            LEFT JOIN subsystems sbs ON app.assigned_subsystem_id = sbs.id
+                                            WHERE ua.user_id = ?
+                                            AND (s.id = app.assigned_system_id OR s.id = sbs.system_id)
+                                        )', [$userId]);
+                                })
+                                // Fallback Coordinator
+                                ->orWhereRaw('EXISTS (
+                                    SELECT 1 FROM user_roles ur
+                                    JOIN roles r ON ur.role_id = r.id
+                                    WHERE ur.user_id = ?
+                                    AND r.slug = "li_coordinator"
+                                    AND ur.is_default = 1
+                                )', [$userId]);
+                            });
+                    });
+                }
+
+                // 6. Direct assignee applications
+                $q->orWhere('app.current_assignee_id', $userId);
+
+                // 7. Applications previously acted on by this user (approvals)
+                $q->orWhereRaw('EXISTS (
+                    SELECT 1 FROM application_approvals aa
+                    WHERE aa.application_id = app.id
+                    AND aa.approved_by = ?
+                )', [$userId]);
+
+                // 8. Applications previously acted on by this user (logs)
+                $q->orWhereRaw('EXISTS (
+                    SELECT 1 FROM application_logs al
+                    WHERE al.application_id = app.id
+                    AND al.action_by = ?
+                )', [$userId]);
+            });
+        }
+
         $apps = $appsQuery
             ->select([
                 'app.id',
                 'app.application_id',
                 'app.status',
+                'app.parent_application_id',
+                'app.reapplied_from',
                 ...($this->hasApplicationColumn('ligo_member') ? ['app.ligo_member'] : [DB::raw('NULL as ligo_member')]),
                 ...($this->hasApplicationColumn('duration') ? ['app.duration'] : [DB::raw('NULL as duration')]),
                 'app.created_at as submitted_at',
@@ -484,16 +663,143 @@ class AdminController extends Controller
         }
 
         $role = DB::table('roles')->where('id', $request->role_id)->first();
+        if (!$role) {
+            return response()->json(['error' => 'Role not found.'], 404);
+        }
+
+        // Prevent duplicate assignment of the exact same active role
+        $existingSameActive = DB::table('user_roles')
+            ->where('user_id', $user->user_id)
+            ->where('role_id', $request->role_id)
+            ->where('is_active', true)
+            ->exists();
+        if ($existingSameActive) {
+            return response()->json(['error' => 'This user is already actively assigned this role.'], 422);
+        }
+
+        // Fetch user's institute
+        $instituteId = $request->input('institute_id');
+        if (!$instituteId) {
+            $instituteId = DB::table('users')->where('user_id', $user->user_id)->value('institute_id');
+        }
+        if (!$instituteId) {
+            $instituteId = DB::table('user_affilation')->where('user_id', $user->user_id)->value('institute_id');
+        }
+
+        // Retrieve current active role for logging
+        $previousRoleEntry = DB::table('user_roles')
+            ->where('user_id', $user->user_id)
+            ->where('is_active', true)
+            ->first();
+        $previousRoleName = null;
+        if ($previousRoleEntry) {
+            $prevRole = DB::table('roles')->where('id', $previousRoleEntry->role_id)->first();
+            $previousRoleName = $prevRole ? $prevRole->name : $previousRoleEntry->role;
+        }
 
         DB::beginTransaction();
         try {
-            // ── Assign Role ──
-            DB::table('user_roles')->updateOrInsert(
-                ['user_id' => $user->user_id, 'role_id' => $request->role_id],
-                ['is_active' => true, 'updated_at' => now(), 'created_at' => now()]
-            );
+            // Special handling for LI-Coordinator
+            if ($role->slug === 'li_coordinator' || $role->name === 'LI-Coordinator') {
+                if (!$instituteId) {
+                    return response()->json(['error' => 'User has no affiliated institute. An institute affiliation is required to assign the LI-Coordinator role.'], 422);
+                }
 
-            // ── Optional: Sync affiliation if provided ──
+                // Check existing LI Coordinator status on the institute
+                $hasCoordinatorStatus = DB::table('institutes')
+                    ->where('id', $instituteId)
+                    ->value('has_li_coordinator');
+
+                if ($hasCoordinatorStatus) {
+                    // Find existing active LI-Coordinator for that institute and deactivate
+                    DB::table('user_roles')
+                        ->where('institute_id', $instituteId)
+                        ->where(function ($query) {
+                            $query->where('role', 'LI-Coordinator')
+                                  ->orWhere('role_id', 3); // 3 is standard LI-Coordinator role ID
+                        })
+                        ->where('is_active', true)
+                        ->update([
+                            'is_active' => false,
+                            'updated_at' => now()
+                        ]);
+                } else {
+                    // If no coordinator status, update institute table
+                    DB::table('institutes')
+                        ->where('id', $instituteId)
+                        ->update([
+                            'has_li_coordinator' => true,
+                            'updated_at' => now()
+                        ]);
+                }
+
+                // Deactivate all current roles of the target user to preserve history
+                DB::table('user_roles')
+                    ->where('user_id', $user->user_id)
+                    ->where('is_active', true)
+                    ->update([
+                        'is_active' => false,
+                        'updated_at' => now()
+                    ]);
+
+                // Always insert a new row to preserve history
+                DB::table('user_roles')->insert([
+                    'user_id' => $user->user_id,
+                    'role_id' => $role->id,
+                    'institute_id' => $instituteId,
+                    'role' => 'LI-Coordinator',
+                    'is_active' => true,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                    'assigned_by' => $request->auth_user_id
+                ]);
+
+            } else {
+                // Deactivate all current roles of the target user to preserve history
+                DB::table('user_roles')
+                    ->where('user_id', $user->user_id)
+                    ->where('is_active', true)
+                    ->update([
+                        'is_active' => false,
+                        'updated_at' => now()
+                    ]);
+
+                // Always insert a new row to preserve history
+                DB::table('user_roles')->insert([
+                    'user_id' => $user->user_id,
+                    'role_id' => $role->id,
+                    'institute_id' => $instituteId,
+                    'role' => $role->name,
+                    'is_active' => true,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                    'assigned_by' => $request->auth_user_id
+                ]);
+
+                // If user was previously an active LI-Coordinator for this institute,
+                // check if any other active LI-Coordinators exist. If none, update institutes.has_li_coordinator to false.
+                if ($previousRoleName === 'LI-Coordinator' && $instituteId) {
+                    $otherActiveCoordinators = DB::table('user_roles')
+                        ->where('institute_id', $instituteId)
+                        ->where(function ($query) {
+                            $query->where('role', 'LI-Coordinator')
+                                  ->orWhere('role_id', 3);
+                        })
+                        ->where('is_active', true)
+                        ->count();
+
+                    if ($otherActiveCoordinators === 0) {
+                        DB::table('institutes')
+                            ->where('id', $instituteId)
+                            ->update([
+                                'has_li_coordinator' => false,
+                                'updated_at' => now()
+                            ]);
+                    }
+                }
+            }
+
+            // Sync affiliation if institute_id and category_id are provided (e.g. from original admin form)
             if ($request->has('institute_id') && $request->has('category_id')) {
                 DB::table('user_affilation')->updateOrInsert(
                     ['user_id' => $user->user_id],
@@ -506,7 +812,7 @@ class AdminController extends Controller
                 );
             }
 
-            // ── Optional: Sync Entity Lead if role is a lead role ──
+            // Sync Entity Lead if entity type/id are provided (system or subsystem)
             if ($request->entity_type && $request->entity_id) {
                 // Deactivate any existing active leads for this entity
                 DB::table('entity_assignments')
@@ -526,6 +832,17 @@ class AdminController extends Controller
                     'updated_at' => now()
                 ]);
             }
+
+            // Audit Log in role_assignment_logs
+            DB::table('role_assignment_logs')->insert([
+                'assigned_by' => $request->auth_user_id,
+                'user_id' => $user->user_id,
+                'previous_role' => $previousRoleName,
+                'new_role' => $role->name,
+                'institute_id' => $instituteId,
+                'created_at' => now(),
+                'updated_at' => now()
+            ]);
 
             DB::commit();
             return response()->json(['message' => 'Role and affiliation updated successfully.']);
@@ -1058,7 +1375,9 @@ class AdminController extends Controller
             'durations' => DB::table('durations')->select(['*', 'name'])->get(),
             'users' => DB::table('users as u')
                 ->leftJoin('user_profiles as up', 'u.user_id', '=', 'up.user_id')
-                ->leftJoin('user_roles as ur', 'u.user_id', '=', 'ur.user_id')
+                ->leftJoin('user_roles as ur', function ($join) {
+                    $join->on('u.user_id', '=', 'ur.user_id')->where('ur.is_active', true);
+                })
                 ->leftJoin('roles as r', 'ur.role_id', '=', 'r.id')
                 ->leftJoin('user_affilation as ua', 'u.user_id', '=', 'ua.user_id')
                 ->leftJoin('institutes as i', 'ua.institute_id', '=', 'i.id')
@@ -1105,23 +1424,41 @@ class AdminController extends Controller
             return response()->json(['error' => 'Identifier required'], 400);
 
         $u = DB::table('users as u')
-            ->leftJoin('user_roles as ur', 'u.user_id', '=', 'ur.user_id')
+            ->leftJoin('user_profiles as up', 'u.user_id', '=', 'up.user_id')
+            ->leftJoin('user_roles as ur', function ($join) {
+                $join->on('u.user_id', '=', 'ur.user_id')->where('ur.is_active', true);
+            })
             ->leftJoin('user_affilation as ua', 'u.user_id', '=', 'ua.user_id')
+            ->leftJoin('institutes as i', 'ua.institute_id', '=', 'i.id')
+            ->leftJoin('categories as c', 'ua.category_id', '=', 'c.id')
             ->where('u.user_id', $id)
             ->orWhere('u.email', $id)
             ->select([
                 'u.user_id',
                 'u.email',
                 'u.is_blocked',
+                DB::raw("COALESCE(CONCAT(up.first_name, ' ', up.last_name), u.email) as name"),
                 'ur.role_id',
                 'ua.institute_id',
+                'i.name as institute_name',
                 'ua.category_id',
+                'c.name as category_name',
                 'ua.entity_id'
             ])
             ->first();
 
         if (!$u)
             return response()->json(['error' => 'User not found'], 404);
+
+        // Fetch supervisor if exists
+        $supervisor = DB::table('user_supervisors as us')
+            ->join('users as s', 'us.supervisor_id', '=', 's.user_id')
+            ->leftJoin('user_profiles as sp', 's.user_id', '=', 'sp.user_id')
+            ->where('us.user_id', $u->user_id)
+            ->select(DB::raw("COALESCE(CONCAT(sp.first_name, ' ', sp.last_name), s.email) as supervisor_name"))
+            ->first();
+
+        $u->supervisor_name = $supervisor ? $supervisor->supervisor_name : null;
 
         return response()->json($u);
     }

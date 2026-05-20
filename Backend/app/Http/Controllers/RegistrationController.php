@@ -214,10 +214,12 @@ class RegistrationController extends Controller
                         ->first();
 
                     if ($lastRejectedApp) {
+                        $oldSnapshot = $this->createProfileSnapshot($userId);
                         DB::table('applications')
                             ->where('id', $lastRejectedApp->id)
                             ->update([
                                 'status' => 'reapplied',
+                                'profile_snapshot' => json_encode($oldSnapshot),
                                 'updated_at' => now()
                             ]);
                     }
@@ -417,6 +419,16 @@ class RegistrationController extends Controller
                 $user->update(['status' => 'pending-approval']);
             }
 
+            // Create and update the snapshot for the current application now that all updates are applied
+            if (isset($applicationId)) {
+                $newSnapshot = $this->createProfileSnapshot($userId);
+                DB::table('applications')
+                    ->where('id', $applicationId)
+                    ->update([
+                        'profile_snapshot' => json_encode($newSnapshot)
+                    ]);
+            }
+
             DB::commit();
 
             // 7. Trigger Automated Notifications
@@ -610,5 +622,64 @@ class RegistrationController extends Controller
             DB::rollBack();
             return response()->json(['error' => $e->getMessage()], 500);
         }
+    }
+
+    /**
+     * Captures a snapshot of the user profile, affiliation, contact, qualification, and supervisor details.
+     */
+    private function createProfileSnapshot(string $userId): array
+    {
+        $profile = DB::table('user_profiles')->where('user_id', $userId)->first();
+        $qualification = DB::table('user_qualification')->where('user_id', $userId)->first();
+        $contact = DB::table('user_contacts')->where('user_id', $userId)->first();
+        
+        $affiliation = DB::table('user_affilation as ua')
+            ->leftJoin('institutes as i', 'ua.institute_id', '=', 'i.id')
+            ->leftJoin('categories as c', 'ua.category_id', '=', 'c.id')
+            ->where('ua.user_id', $userId)
+            ->select(['i.name as institute_name', 'c.name as category_name', 'ua.id_card_path'])
+            ->first();
+
+        $supervisor = DB::table('user_supervisors as us')
+            ->join('users as u', 'us.supervisor_id', '=', 'u.user_id')
+            ->leftJoin('user_profiles as up', 'u.user_id', '=', 'up.user_id')
+            ->where('us.user_id', $userId)
+            ->where('us.is_active', true)
+            ->select(DB::raw("COALESCE(CONCAT(up.first_name, ' ', up.last_name), u.email) as supervisor_name"))
+            ->first();
+
+        return [
+            'personal' => $profile ? [
+                'title' => $profile->title,
+                'first_name' => $profile->first_name,
+                'middle_name' => $profile->middle_name,
+                'last_name' => $profile->last_name,
+                'date_of_birth' => $profile->date_of_birth,
+                'gender' => $profile->gender,
+            ] : null,
+            'qualification' => $qualification ? [
+                'highest_qualification' => $qualification->highest_qualification,
+                'field_of_study' => $qualification->field_of_study,
+                'university' => $qualification->university,
+                'graduation_year' => $qualification->graduation_year,
+                'graduation_month' => $qualification->graduation_month,
+            ] : null,
+            'contact' => $contact ? [
+                'address_line_1' => $contact->address_line_1,
+                'address_line_2' => $contact->address_line_2,
+                'address_line_3' => $contact->address_line_3,
+                'city' => $contact->city,
+                'state' => $contact->state,
+                'postal_code' => $contact->postal_code,
+                'country_name' => $contact->country_name,
+                'phone_number' => $contact->phone_number,
+            ] : null,
+            'affiliation' => $affiliation ? [
+                'institute_name' => $affiliation->institute_name,
+                'category_name' => $affiliation->category_name,
+                'id_card_path' => $affiliation->id_card_path,
+            ] : null,
+            'supervisor' => $supervisor ? $supervisor->supervisor_name : 'None',
+        ];
     }
 }

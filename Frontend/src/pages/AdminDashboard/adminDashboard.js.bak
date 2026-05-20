@@ -18,7 +18,6 @@ const _state = {
     searchQuery: '',
     cachedInstitutesList: null,
     cachedRolesList: null,
-    permissions: [],
 };
 
 let _app = null;
@@ -26,106 +25,64 @@ let _app = null;
 // ═══════════════════════════════════════════════════════════════════════════
 // 1. ENTRY POINT
 // ═══════════════════════════════════════════════════════════════════════════
-export async function renderAdminDashboard(container, defaultTab = null) {
-    let userPermissions = [];
-    try {
-        const res = await authFetch(API.ME);
-        if (res.ok) {
-            const data = await res.json();
-            userPermissions = data.permissions || [];
-            _state.permissions = userPermissions;
+export async function renderAdminDashboard(container) {
+    // ── Guard: verify super_admin ──────────────────────────────────────────
+    let cachedRoles = JSON.parse(localStorage.getItem('user_roles') || '[]');
+
+    if (cachedRoles.length === 0) {
+        try {
+            const res = await authFetch(API.ME);
+            if (res.ok) {
+                const data = await res.json();
+                cachedRoles = (data.roles || []).map(r => r.slug);
+                localStorage.setItem('user_roles', JSON.stringify(cachedRoles));
+            }
+        } catch (err) {
+            if (err.message === 'AUTH_SESSION_EXPIRED') return;
         }
-    } catch (err) {
-        if (err.message === 'AUTH_SESSION_EXPIRED') return;
-        console.error("Dashboard error:", err);
     }
 
-    const ADMIN_PERMISSIONS = [
-        'view_applications', 'manage_users', 'manage_roles', 'assign_roles', 
-        'approve_identity', 'manage_institutes', 'manage_systems', 'manage_services', 
-        'manage_categories', 'manage_durations', 'manage_salutations', 'manage_requests', 
-        'system_settings', 'view_logs', 'manage_workflows'
-    ];
-
-    const hasAdminAccess = userPermissions.some(p => ADMIN_PERMISSIONS.includes(p));
-    if (!hasAdminAccess) {
+    if (!cachedRoles.includes('super_admin')) {
         window.location.hash = '#/dashboard';
         return;
     }
 
     _app = container;
-    _app.innerHTML = _buildShell(userPermissions);
+    _app.innerHTML = _buildShell();
     _initSidebar();
     _initModals();
     feather.replace();
-
-    let initialTab = defaultTab;
-    if (!initialTab) {
-        initialTab = 'modify';
-        if (userPermissions.includes('view_applications')) {
-            initialTab = 'applications';
-        } else if (userPermissions.includes('manage_workflows')) {
-            initialTab = 'workflows';
-        }
-    }
-
-    _switchTab(initialTab); window._switchTab = _switchTab;
+    _switchTab('applications'); window._switchTab = _switchTab;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 2. SHELL
 // ═══════════════════════════════════════════════════════════════════════════
-function _buildShell(permissions = []) {
-    const hasApplications = permissions.includes('view_applications');
-    const hasWorkflows = permissions.includes('manage_workflows');
-    const hasModifyData = [
-        'manage_institutes', 'manage_users', 'manage_roles', 'assign_roles', 'manage_categories',
-        'manage_systems', 'manage_services', 'manage_durations', 'manage_salutations',
-        'manage_requests'
-    ].some(p => permissions.includes(p));
-
-    let sidebarHtml = `<aside class="admin-sidebar">`;
-
-    if (hasApplications) {
-        sidebarHtml += `
+function _buildShell() {
+    return `
+    <div class="admin-shell">
+        <!-- Sidebar -->
+        <aside class="admin-sidebar">
             <div class="adm-sidebar-title">Management</div>
-            <div class="adm-nav-item" data-tab="applications">
+            <div class="adm-nav-item active" data-tab="applications">
                 <svg data-feather="monitor"></svg> Applications
             </div>
             <div class="adm-nav-item" data-tab="reports">
                 <svg data-feather="bar-chart-2"></svg> Reports
             </div>
-        `;
-    }
 
-    if (hasWorkflows || hasModifyData) {
-        sidebarHtml += `<div class="adm-sidebar-title">System Config</div>`;
-        if (hasWorkflows) {
-            sidebarHtml += `
-                <div class="adm-nav-item" data-tab="workflows">
-                    <svg data-feather="git-merge"></svg> Workflow Engine
-                </div>
-            `;
-        }
-        if (hasModifyData) {
-            sidebarHtml += `
-                <div class="adm-nav-item" data-tab="modify">
-                    <svg data-feather="database"></svg> Modify Data
-                </div>
-            `;
-        }
-    }
+            <div class="adm-sidebar-title">System Config</div>
+            <div class="adm-nav-item" data-tab="workflows">
+                <svg data-feather="git-merge"></svg> Workflow Engine
+            </div>
+            <div class="adm-nav-item" data-tab="modify">
+                <svg data-feather="database"></svg> Modify Data
+            </div>
 
-    sidebarHtml += `
-        <div class="adm-nav-item" id="adm-logout-btn" style="color:#ef4444; margin-top:auto; padding-top:1.5rem; border-top:1px solid #e2e8f0;">
-            <svg data-feather="log-out"></svg> Sign Out
-        </div>
-    </aside>`;
-
-    return `
-    <div class="admin-shell">
-        <!-- Sidebar -->
-        ${sidebarHtml}
+            <div class="adm-nav-item" id="adm-logout-btn" style="color:#ef4444; margin-top:auto; padding-top:1.5rem; border-top:1px solid #e2e8f0;">
+                <svg data-feather="log-out"></svg> Sign Out
+            </div>
+        </aside>
 
         <!-- Main -->
         <main class="admin-main">
@@ -232,7 +189,7 @@ function _buildShell(permissions = []) {
                     <p class="adm-page-sub">Select a category to manage its records in a dedicated view.</p>
                 </div>
                 <div class="adm-cards-grid" id="adm-modify-cards">
-                    ${_buildModifyCards(permissions)}
+                    ${_buildModifyCards()}
                 </div>
             </div>
 
@@ -449,10 +406,9 @@ function _renderAppsTable() {
         return `
         <tr>
             <td style="white-space:nowrap;">
-                <div style="font-family:monospace;font-size:0.82rem;font-weight:700;color:#6366f1;background:#eef2ff;padding:0.2rem 0.6rem;border-radius:0.4rem;display:inline-block;border:1px solid #c7d2fe;margin-bottom:4px;">
+                <div style="font-family:monospace;font-size:0.82rem;font-weight:700;color:#6366f1;background:#eef2ff;padding:0.2rem 0.6rem;border-radius:0.4rem;display:inline-block;border:1px solid #c7d2fe;">
                     ${__esc(a.application_id || a.id)}
                 </div>
-                ${a.reapplied_from ? `<div style="font-size:0.7rem; color:#d97706; background:#fffbeb; padding:2px 6px; border-radius:4px; border:1px solid #fde68a; display:inline-flex; align-items:center; gap:3px;" title="Reapplied from original application ${__esc(a.reapplied_from)}"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>Reapplication</div>` : ''}
             </td>
             <td>
                 <div class="adm-applicant-name">${__esc(a.applicant_name || '—')}</div>
@@ -860,22 +816,8 @@ const _ENTITIES = [
     { key: 'durations', label: 'Durations', fullLabel: 'Duration Settings', desc: 'Configure system-wide duration options', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>' },
 ];
 
-function _buildModifyCards(permissions = []) {
-    const cardPerms = {
-        'institutes': ['manage_institutes'],
-        'users_roles': ['manage_users', 'manage_roles', 'assign_roles'],
-        'categories': ['manage_categories'],
-        'services': ['manage_services'],
-        'systems': ['manage_systems'],
-        'requests': ['manage_requests'],
-        'titles': ['manage_salutations'],
-        'durations': ['manage_durations']
-    };
-
-    return _ENTITIES.filter(e => {
-        const required = cardPerms[e.key] || [];
-        return required.some(p => permissions.includes(p));
-    }).map(e => `
+function _buildModifyCards() {
+    return _ENTITIES.map(e => `
         <div class="adm-data-card" data-entity="${e.key}">
             <span class="adm-data-card-icon">${e.icon}</span>
             <div class="adm-data-card-title">${e.label}</div>
@@ -927,7 +869,7 @@ async function _loadDataAdmin(entity) {
 
     // ── Special: Users & Roles ──────────────────────────────────────────
     if (entity === 'users_roles') {
-        content.innerHTML = await _buildUsersPageHtml(_state.permissions);
+        content.innerHTML = await _buildUsersPageHtml();
         _wireAssignRoleForm(content);
         feather.replace();
         return;
@@ -1010,16 +952,18 @@ async function _loadDataAdmin(entity) {
 }
 
 // ── Users page with assign-role form ─────────────────────────────────────
-async function _buildUsersPageHtml(permissions = []) {
+async function _buildUsersPageHtml() {
     let rolesOptions = '<option value="">— Select Role —</option>';
     let instOptions = '<option value="">— Select Institute —</option>';
     let catOptions = '<option value="">— Select Category —</option>';
+    let permissionsHtml = '';
 
     try {
-        const [rRes, iRes, cRes] = await Promise.all([
+        const [rRes, iRes, cRes, pRes] = await Promise.all([
             authFetch(API.ADMIN_ROLES),
             authFetch(API.ADMIN_INSTITUTES),
-            authFetch(API.ADMIN_DATA('categories'))
+            authFetch(API.ADMIN_DATA('categories')),
+            authFetch(`${BASE_URL}/api/auth/admin/permissions`)
         ]);
         if (rRes.ok) { const roles = await rRes.json(); rolesOptions += roles.map(r => `<option value="${r.id}">${__esc(r.name)}</option>`).join(''); }
         if (iRes.ok) {
@@ -1028,61 +972,9 @@ async function _buildUsersPageHtml(permissions = []) {
             instOptions += list.map(i => `<option value="${i.id}">${__esc(i.name)}</option>`).join('');
         }
         if (cRes.ok) { const cats = await cRes.json(); catOptions += cats.map(c => `<option value="${c.id}">${__esc(c.name)}</option>`).join(''); }
-    } catch (_) { }
-
-    const hasCreateRole = permissions.includes('manage_roles');
-    const hasAssignRole = permissions.includes('assign_roles');
-
-    let cardsHtml = '';
-    let columns = 0;
-
-    if (hasCreateRole) {
-        columns++;
-        cardsHtml += `
-        <!-- Create Role Card -->
-        <div class="adm-data-card" id="adm-card-create-role" style="cursor: pointer;">
-            <span class="adm-data-card-icon"><i data-feather="shield"></i></span>
-            <div class="adm-data-card-title">Create Role</div>
-        </div>
-        `;
-    }
-
-    if (hasAssignRole) {
-        columns++;
-        cardsHtml += `
-        <!-- Assign Role Card -->
-        <div class="adm-data-card" id="adm-card-assign-role" style="cursor: pointer;">
-            <span class="adm-data-card-icon"><i data-feather="users"></i></span>
-            <div class="adm-data-card-title">Assign Role</div>
-        </div>
-        `;
-    }
-
-    const gridColumnsStyle = columns === 1 
-        ? 'grid-template-columns: minmax(180px, 220px);' 
-        : 'grid-template-columns: repeat(2, minmax(180px, 220px));';
-
-    return `
-    <div id="adm-users-roles-main-container" class="adm-cards-grid" style="margin-top: 1rem; margin-bottom: 2rem; ${gridColumnsStyle} justify-content: center; gap: 3rem; padding: 1.5rem 0;">
-        ${cardsHtml}
-    </div>
-
-    <!-- Hidden Subpage Container -->
-    <div id="adm-users-roles-view-container" style="display: none;"></div>
-
-    <!-- Hidden options to hold metadata for _manageUser fetching -->
-    <select id="adm-m-role-select" style="display: none;">${rolesOptions}</select>
-    <select id="adm-m-inst-select" style="display: none;">${instOptions}</select>
-    <select id="adm-m-cat-select" style="display: none;">${catOptions}</select>
-    `;
-}
-
-async function _buildCreateRoleHtml() {
-    let permissionsHtml = '';
-    try {
-        const pRes = await authFetch(`${BASE_URL}/api/auth/admin/permissions`);
         if (pRes.ok) {
             const perms = await pRes.json();
+            // Group by type
             const groups = perms.reduce((acc, p) => { (acc[p.type] = acc[p.type] || []).push(p); return acc; }, {});
             permissionsHtml = Object.keys(groups).map(type => `
                 <div style="margin-bottom:1.5rem;">
@@ -1101,18 +993,11 @@ async function _buildCreateRoleHtml() {
                 </div>
             `).join('');
         }
-    } catch (_) {}
+    } catch (_) { }
 
     return `
-    <!-- Back Button -->
-    <div style="margin-bottom:1.5rem; display:flex; align-items:center; gap:0.75rem; font-family: 'Inter', sans-serif;">
-        <button id="adm-users-roles-back-btn" class="adm-btn adm-btn-secondary" style="height:38px; font-size:0.8rem; font-weight:700; padding:0 1.25rem; border-radius:8px; background:#fff; color:#475569; border:1px solid #cbd5e1; cursor:pointer; display:flex; align-items:center; gap:8px;">
-            <i data-feather="arrow-left" style="width:14px; height:14px;"></i> Back to Menu
-        </button>
-    </div>
-
-    <!-- Master Role Creator (Accordion) -->
-    <div class="adm-accordion open" id="role-creator-accordion" style="margin-bottom:1.5rem; border:1px solid #e2e8f0; border-radius:12px; background:#fff; overflow:hidden;">
+    <!-- 1. Master Role Creator (Slider/Accordion) -->
+    <div class="adm-accordion" id="role-creator-accordion" style="margin-bottom:1.5rem; border:1px solid #e2e8f0; border-radius:12px; background:#fff; overflow:hidden;">
         <div class="adm-accordion-header" style="padding:1.15rem 1.25rem; background:linear-gradient(to right, #f5f3ff 20%, #fff); border-left:5px solid #6366f1; border-bottom:1px solid #f1f5f9; cursor:pointer;">
             <div style="display:flex; align-items:center; gap:12px;">
                 <div style="width:36px; height:36px; border-radius:8px; background:#fff; color:#6366f1; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 4px rgba(0,0,0,0.05);">
@@ -1156,238 +1041,111 @@ async function _buildCreateRoleHtml() {
                 </div>
             </div>
             <div id="role-create-fb" style="min-height:1.2rem; font-size:0.85rem; margin-bottom:1rem;"></div>
-            <button id="add-role-btn" class="adm-btn adm-btn-primary" style="width:auto; padding:0.75rem 2.5rem; background:#6366f1;">Initialize New Role</button>
-        </div>
-    </div>
+            <button id="add-role-btn" class="adm-btn adm-btn-primary" style="width:auto; padding:0.75rem 2.5rem; background:#6366f1; margin-bottom:2rem;">Initialize New Role</button>
 
-    <!-- Existing Roles (Accordion - Separate) -->
-    <div class="adm-accordion open" id="roles-list-accordion" style="margin-top:1.5rem; border:1px solid #e2e8f0; border-radius:12px; background:#fff; overflow:hidden;">
-        <div class="adm-accordion-header" style="padding:1rem 1.25rem; background:linear-gradient(to right, #f5f3ff 20%, #fff); border-left:5px solid #6366f1; border-bottom:1px solid #f1f5f9; cursor:pointer;">
-            <div style="display:flex; align-items:center; gap:12px;">
-                <div style="width:36px; height:36px; border-radius:8px; background:#fff; color:#6366f1; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 4px rgba(0,0,0,0.05);">
-                    <i data-feather="list"></i>
+            <!-- 3. Roles Directory (Nested Accordion) -->
+            <div class="adm-accordion" id="roles-list-accordion" style="margin-top:1.5rem; border:1px solid #e2e8f0; border-radius:12px; background:#fff; overflow:hidden;">
+                <div class="adm-accordion-header" style="padding:1rem 1.25rem; background:linear-gradient(to right, #f5f3ff 20%, #fff); border-left:5px solid #6366f1; border-bottom:1px solid #f1f5f9; cursor:pointer;">
+                    <div style="display:flex; align-items:center; gap:12px;">
+                        <div style="width:36px; height:36px; border-radius:8px; background:#fff; color:#6366f1; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 4px rgba(0,0,0,0.05);">
+                            <i data-feather="list"></i>
+                        </div>
+                        <h4 style="margin:0; font-size:0.95rem; color:#1e293b; font-weight:800;">EXISTING ROLES DIRECTORY</h4>
+                        <span id="roles-list-count" style="margin-left:auto; background:#6366f1; color:#fff; padding:2px 8px; border-radius:12px; font-size:0.75rem; font-weight:700; min-width:24px; text-align:center; display:none;"></span>
+                    </div>
+                    <i data-feather="chevron-down" class="adm-accordion-chevron" style="color:#64748b; margin-left: 10px;"></i>
                 </div>
-                <h4 style="margin:0; font-size:0.95rem; color:#1e293b; font-weight:800;">EXISTING ROLES DIRECTORY</h4>
-                <span id="roles-list-count" style="margin-left:auto; background:#6366f1; color:#fff; padding:2px 8px; border-radius:12px; font-size:0.75rem; font-weight:700; min-width:24px; text-align:center; display:none;"></span>
+                <div class="adm-accordion-content" style="padding:1.5rem;">
+                    <div id="adm-roles-list-container"></div>
+                </div>
             </div>
-            <i data-feather="chevron-down" class="adm-accordion-chevron" style="color:#64748b; margin-left: 10px;"></i>
-        </div>
-        <div class="adm-accordion-content" style="padding:1.5rem;">
-            <div id="adm-roles-list-container"></div>
         </div>
     </div>
-    `;
-}
 
-async function _buildAssignRoleHtml() {
-    return `
-    <!-- Back Button -->
-    <div style="margin-bottom:1.5rem; display:flex; align-items:center; gap:0.75rem; font-family: 'Inter', sans-serif;">
-        <button id="adm-users-roles-back-btn" class="adm-btn adm-btn-secondary" style="height:38px; font-size:0.8rem; font-weight:700; padding:0 1.25rem; border-radius:8px; background:#fff; color:#475569; border:1px solid #cbd5e1; cursor:pointer; display:flex; align-items:center; gap:8px;">
-            <i data-feather="arrow-left" style="width:14px; height:14px;"></i> Back to Menu
-        </button>
-    </div>
-
-    <!-- Assign Role & Affiliation (Accordion) -->
-    <div class="adm-accordion open" id="assign-role-editor-accordion" style="margin-bottom:1.5rem; border:1px solid #e2e8f0; border-radius:12px; background:#fff; overflow:hidden; font-family: 'Inter', sans-serif;">
+    <!-- 2. Role Assignment Section (Slider/Accordion) -->
+    <div class="adm-accordion" id="role-assignment-accordion" style="margin-bottom:2rem; border:1px solid #e2e8f0; border-radius:12px; background:#fff; overflow:hidden;">
         <div class="adm-accordion-header" style="padding:1.15rem 1.25rem; background:linear-gradient(to right, #f5f3ff 20%, #fff); border-left:5px solid #6366f1; border-bottom:1px solid #f1f5f9; cursor:pointer;">
             <div style="display:flex; align-items:center; gap:12px;">
-                <div style="width:36px; height:36px; border-radius:8px; background:#fff; color:#6366f1; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 4px rgba(0,0,0,0.05);">
-                    <i data-feather="edit-3"></i>
+                <div style="width:36px; height:36px; border-radius:8px; background:#fff; color:#475569; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 4px rgba(0,0,0,0.05);">
+                    <i data-feather="user-plus"></i>
                 </div>
                 <div>
                     <h4 style="margin:0; font-size:0.95rem; color:#1e293b; font-weight:800;">ASSIGN ROLE & AFFILIATION</h4>
-                    <p style="margin:0; font-size:0.7rem; color:#64748b; font-weight:600;">MANAGE USER ASSIGNMENTS IN REAL-TIME</p>
+                    <p style="margin:0; font-size:0.7rem; color:#64748b; font-weight:600;">CONNECT USERS WITH ROLES AND INSTITUTES</p>
                 </div>
             </div>
             <i data-feather="chevron-down" style="width:18px; height:18px; color:#94a3b8;"></i>
         </div>
         <div class="adm-accordion-content" style="padding:1.5rem;">
-            <!-- Placeholder prompt when no user is loaded -->
-            <div id="adm-assign-placeholder" style="padding: 2.5rem; text-align: center; border: 1.5px dashed #cbd5e1; border-radius: 12px; background: #f8fafc; color: #64748b; font-size: 0.85rem; font-weight: 600;">
-                <i data-feather="info" style="width: 20px; height: 20px; display: inline-block; vertical-align: middle; margin-right: 6px; color: #6366f1;"></i>
-                Select a user from the Users Directory below to edit their role.
-            </div>
-
-            <!-- Form fields (hidden initially until a user is clicked) -->
-            <div id="adm-assign-editor-form" style="display: none; flex-direction: column; gap: 1.25rem;">
-                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.25rem;">
-                    <!-- User Email -->
-                    <div>
-                        <label style="display: block; font-size: 0.75rem; font-weight: 700; color: #475569; margin-bottom: 6px;">User Email</label>
-                        <input type="text" id="adm-editor-email" disabled style="
-                            width: 100%;
-                            background: #f8fafc;
-                            color: #64748b;
-                            cursor: not-allowed;
-                            border: 1.5px solid #e2e8f0;
-                            padding: 10px 12px;
-                            border-radius: 8px;
-                            font-size: 0.85rem;
-                            font-weight: 600;
-                        " />
-                    </div>
-
-                    <!-- User Institute -->
-                    <div>
-                        <label style="display: block; font-size: 0.75rem; font-weight: 700; color: #475569; margin-bottom: 6px;">User Institute</label>
-                        <input type="text" id="adm-editor-inst" disabled style="
-                            width: 100%;
-                            background: #f8fafc;
-                            color: #64748b;
-                            cursor: not-allowed;
-                            border: 1.5px solid #e2e8f0;
-                            padding: 10px 12px;
-                            border-radius: 8px;
-                            font-size: 0.85rem;
-                            font-weight: 600;
-                        " />
-                    </div>
-
-                    <!-- User Category -->
-                    <div>
-                        <label style="display: block; font-size: 0.75rem; font-weight: 700; color: #475569; margin-bottom: 6px;">User Category</label>
-                        <input type="text" id="adm-editor-cat" disabled style="
-                            width: 100%;
-                            background: #f8fafc;
-                            color: #64748b;
-                            cursor: not-allowed;
-                            border: 1.5px solid #e2e8f0;
-                            padding: 10px 12px;
-                            border-radius: 8px;
-                            font-size: 0.85rem;
-                            font-weight: 600;
-                        " />
-                    </div>
+            <div class="adm-form" style="display:grid; grid-template-columns: repeat(2, 1fr); gap:1.25rem;">
+                <div class="adm-form-group">
+                    <label class="adm-label">User Email</label>
+                    <input id="adm-m-assign-email" type="email" placeholder="user@example.com" class="adm-select" />
                 </div>
+                <div class="adm-form-group">
+                    <label class="adm-label">Institute (Affiliation)</label>
+                    <select id="adm-m-inst-select" class="adm-select">${instOptions}</select>
+                </div>
+                <div class="adm-form-group">
+                    <label class="adm-label">User Category</label>
+                    <select id="adm-m-cat-select" class="adm-select">${catOptions}</select>
+                </div>
+                <div class="adm-form-group">
+                    <label class="adm-label">Assign Role</label>
+                    <select id="adm-m-role-select" class="adm-select">${rolesOptions}</select>
+                </div>
+                <div id="adm-m-entity-group" class="adm-form-group" style="display:none; grid-column: span 2;">
+                    <label id="adm-m-entity-label" class="adm-label">Select Managed Entity</label>
+                    <select id="adm-m-entity-select" class="adm-select">
+                        <option value="">— Select Entity —</option>
+                    </select>
+                </div>
+            </div>
+            <div id="adm-m-assign-fb" style="min-height:1.2rem; font-size:0.85rem; margin:1rem 0;"></div>
+            <button id="adm-m-assign-btn" class="adm-btn adm-btn-primary" style="width:auto; padding:0.75rem 2.5rem; margin-bottom:2rem;">Update User Access</button>
 
-                <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1.25rem; align-items: flex-end;">
-                    <!-- Assign Role Dropdown -->
-                    <div>
-                        <label style="display: block; font-size: 0.75rem; font-weight: 700; color: #475569; margin-bottom: 6px;">Assign / Change Role</label>
-                        <select id="adm-editor-role-select" style="
-                            width: 100%;
-                            padding: 10px 12px;
-                            border-radius: 8px;
-                            font-size: 0.85rem;
-                            font-weight: 600;
-                            border: 1.5px solid #cbd5e1;
-                            background: #fff;
-                            outline: none;
-                            cursor: pointer;
-                            height: 42px;
-                        ">
-                            <!-- Populated dynamically -->
-                        </select>
+            <!-- 4. Users Directory (Nested Accordion) -->
+            <div class="adm-accordion" id="users-list-accordion" style="margin-top:1.5rem; border:1px solid #e2e8f0; border-radius:12px; background:#fff; overflow:hidden;">
+                <div class="adm-accordion-header" style="padding:1rem 1.25rem; background:linear-gradient(to right, #f5f3ff 20%, #fff); border-left:5px solid #6366f1; border-bottom:1px solid #f1f5f9; cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:16px;">
+                    <div style="display:flex; align-items:center; gap:12px;">
+                        <div style="width:36px; height:36px; border-radius:8px; background:#fff; color:#6366f1; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 4px rgba(0,0,0,0.05);">
+                            <i data-feather="users"></i>
+                        </div>
+                        <h4 style="margin:0; font-size:0.95rem; color:#1e293b; font-weight:800;">USERS DIRECTORY</h4>
+                        <span id="users-list-count" style="background:#6366f1; color:#fff; padding:2px 8.5px; border-radius:12px; font-size:0.75rem; font-weight:700; min-width:24px; text-align:center; display:none;"></span>
                     </div>
 
-                    <!-- Actions -->
-                    <div style="display: flex; gap: 10px; height: 42px;">
-                        <button id="adm-editor-cancel-btn" class="adm-btn adm-btn-secondary" style="flex: 1; height: 100%; font-size: 0.8rem; font-weight: 700; border-radius: 8px;">Cancel</button>
-                        <button id="adm-editor-submit-btn" class="adm-btn" style="flex: 1.5; height: 100%; font-size: 0.8rem; font-weight: 700; border-radius: 8px; background: #6366f1; color: #fff; border: 1px solid #6366f1;">Assign Role</button>
+                    <!-- Search Input on Header -->
+                    <div style="flex:1; max-width:300px; position:relative; margin-left:auto; margin-right:12px;" onclick="event.stopPropagation();">
+                        <i data-feather="search" style="position:absolute; left:12px; top:50%; transform:translateY(-50%); width:14px; height:14px; color:#94a3b8; pointer-events:none;"></i>
+                        <input type="text" id="adm-users-search-input" class="adm-search-input" placeholder="Search users by name or email…" style="height:34px; padding-left:2.25rem; font-size:0.75rem; border-color:#dcd7ff; background:#fff; margin:0;" />
                     </div>
+
+                    <i data-feather="chevron-down" class="adm-accordion-chevron" style="color:#64748b;"></i>
                 </div>
-
-                <!-- Warning for LI-Coordinator -->
-                <div id="adm-editor-warning" style="
-                    display: none;
-                    padding: 12px 16px;
-                    background: #fffbeb;
-                    border: 1px solid #fde68a;
-                    border-radius: 8px;
-                    color: #b45309;
-                    font-size: 0.75rem;
-                    font-weight: 600;
-                    line-height: 1.5;
-                ">
-                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
-                        <i data-feather="alert-triangle" style="width: 14px; height: 14px; color: #d97706;"></i>
-                        <strong style="color: #92400e;">Warning</strong>
-                    </div>
-                    Assigning a new LI-Coordinator will deactivate the current active coordinator for this institute.
+                <div class="adm-accordion-content" style="padding:1.5rem;">
+                    <div id="adm-users-list-container"></div>
                 </div>
-
-                <div id="adm-editor-error" style="display: none; color: #ef4444; font-size: 0.75rem; font-weight: 700; font-family: 'Inter', sans-serif;"></div>
             </div>
-        </div>
-    </div>
-
-    <!-- Users Directory (Accordion) -->
-    <div class="adm-accordion open" id="users-list-accordion" style="margin-top:1.5rem; border:1px solid #e2e8f0; border-radius:12px; background:#fff; overflow:hidden; font-family: 'Inter', sans-serif;">
-        <div class="adm-accordion-header" style="padding:1rem 1.25rem; background:linear-gradient(to right, #f5f3ff 20%, #fff); border-left:5px solid #6366f1; border-bottom:1px solid #f1f5f9; cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:16px;">
-            <div style="display:flex; align-items:center; gap:12px;">
-                <div style="width:36px; height:36px; border-radius:8px; background:#fff; color:#6366f1; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 4px rgba(0,0,0,0.05);">
-                    <i data-feather="users"></i>
-                </div>
-                <h4 style="margin:0; font-size:0.95rem; color:#1e293b; font-weight:800;">USERS DIRECTORY</h4>
-                <span id="users-list-count" style="background:#6366f1; color:#fff; padding:2px 8.5px; border-radius:12px; font-size:0.75rem; font-weight:700; min-width:24px; text-align:center; display:none;"></span>
-            </div>
-
-            <!-- Search Input on Header -->
-            <div style="flex:1; max-width:300px; position:relative; margin-left:auto; margin-right:12px;" onclick="event.stopPropagation();">
-                <i data-feather="search" style="position:absolute; left:12px; top:50%; transform:translateY(-50%); width:14px; height:14px; color:#94a3b8; pointer-events:none;"></i>
-                <input type="text" id="adm-users-search-input" class="adm-search-input" placeholder="Search users by name or email…" style="height:34px; padding-left:2.25rem; font-size:0.75rem; border-color:#dcd7ff; background:#fff; margin:0;" />
-            </div>
-
-            <i data-feather="chevron-down" class="adm-accordion-chevron" style="color:#64748b;"></i>
-        </div>
-        <div class="adm-accordion-content" style="padding:1.5rem;">
-            <div id="adm-users-list-container"></div>
         </div>
     </div>
     `;
 }
 
 async function _wireAssignRoleForm(content) {
-    const mainContainer = content.querySelector('#adm-users-roles-main-container');
-    const viewContainer = content.querySelector('#adm-users-roles-view-container');
+    const rolesContainer = content.querySelector('#adm-roles-list-container');
+    const usersContainer = content.querySelector('#adm-users-list-container');
 
-    const cardCreate = content.querySelector('#adm-card-create-role');
-    const cardAssign = content.querySelector('#adm-card-assign-role');
-
-    if (cardCreate) {
-        cardCreate.onclick = async () => {
-            mainContainer.style.display = 'none';
-            viewContainer.innerHTML = `<div class="adm-loading"><div class="adm-spinner"></div> Loading Create Role View…</div>`;
-            viewContainer.style.display = 'block';
-
-            viewContainer.innerHTML = await _buildCreateRoleHtml();
-            feather.replace();
-            _wireCreateRoleSubpage(viewContainer);
-        };
-    }
-
-    if (cardAssign) {
-        cardAssign.onclick = async () => {
-            mainContainer.style.display = 'none';
-            viewContainer.innerHTML = `<div class="adm-loading"><div class="adm-spinner"></div> Loading Assign Role View…</div>`;
-            viewContainer.style.display = 'block';
-
-            viewContainer.innerHTML = await _buildAssignRoleHtml();
-            feather.replace();
-            _wireAssignRoleSubpage(viewContainer);
-        };
-    }
-}
-
-function _wireCreateRoleSubpage(container) {
-    // Back Button
-    const backBtn = container.querySelector('#adm-users-roles-back-btn');
-    if (backBtn) {
-        backBtn.onclick = () => {
-            container.style.display = 'none';
-            const mainContainer = container.previousElementSibling;
-            if (mainContainer) mainContainer.style.display = '';
-        };
-    }
-
-    const roleCreator = container.querySelector('#role-creator-accordion');
+    // Wire Role Creator Accordion
+    const roleCreator = content.querySelector('#role-creator-accordion');
     if (roleCreator) {
         roleCreator.querySelector('.adm-accordion-header').onclick = () => roleCreator.classList.toggle('open');
 
+        // Wire Nested Permissions Accordion
         const permsAccordion = roleCreator.querySelector('#role-perms-accordion');
         if (permsAccordion) {
-            permsAccordion.querySelector('.adm-accordion-header').onclick = (e) => {
+            const h = permsAccordion.querySelector('.adm-accordion-header');
+            h.onclick = (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 permsAccordion.classList.toggle('open');
@@ -1418,10 +1176,7 @@ function _wireCreateRoleSubpage(container) {
                     roleCreator.querySelector('#new-role-name').value = '';
                     roleCreator.querySelector('#new-role-slug').value = '';
                     roleCreator.querySelectorAll('.role-perm-cb').forEach(cb => cb.checked = false);
-                    setTimeout(() => {
-                        roleCreator.classList.remove('open');
-                        loadRoleList();
-                    }, 1000);
+                    setTimeout(() => { roleCreator.classList.remove('open'); _switchTab('data-admin', 'users_roles'); }, 1000);
                 } else {
                     fb.style.color = '#ef4444'; fb.textContent = data.error || 'Creation failed.';
                 }
@@ -1430,158 +1185,19 @@ function _wireCreateRoleSubpage(container) {
         };
     }
 
-    const rolesListAccordion = container.querySelector('#roles-list-accordion');
-    if (rolesListAccordion) {
-        rolesListAccordion.querySelector('.adm-accordion-header').onclick = () => rolesListAccordion.classList.toggle('open');
+    // Wire Role Assignment Accordion
+    const assignmentCreator = content.querySelector('#role-assignment-accordion');
+    if (assignmentCreator) {
+        assignmentCreator.querySelector('.adm-accordion-header').onclick = () => assignmentCreator.classList.toggle('open');
     }
 
-    const rolesContainer = container.querySelector('#adm-roles-list-container');
-    const loadRoleList = async () => {
-        try {
-            const res = await authFetch(API.ADMIN_ROLES);
-            const list = res.ok ? await res.json() : [];
-            list.sort((a, b) => (Number(b.level) || 0) - (Number(a.level) || 0));
-
-            const rolesAccordionCount = container.querySelector('#roles-list-count');
-            if (rolesAccordionCount) {
-                rolesAccordionCount.textContent = list.length;
-                rolesAccordionCount.style.display = 'inline-block';
-            }
-
-            rolesContainer.innerHTML = `
-                <div class="adm-table-wrap" style="background:#fff; border:1px solid #e2e8f0; border-radius:12px; overflow:hidden;">
-                    <table class="adm-table" style="margin: 0;">
-                        <thead>
-                            <tr>
-                                <th style="width: 80px; text-align: center;">Level</th>
-                                <th style="width: 200px;">Role</th>
-                                <th>Permissions</th>
-                                <th style="width: 120px; text-align: center;">Status</th>
-                                <th style="width: 100px; text-align: center;">Toggle</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${list.map(r => {
-                                const isSuper = r.slug === 'super_admin';
-                                return `
-                                <tr>
-                                    <td style="text-align: center; vertical-align: middle;">
-                                        <div style="width:42px; height:42px; border-radius:10px; background:#f5f3ff; color:#6366f1; display:inline-flex; align-items:center; justify-content:center; font-weight:800; font-size:0.85rem; border:1px solid #e0e7ff; margin:0 auto;">
-                                            L${r.level || '—'}
-                                        </div>
-                                    </td>
-                                    <td style="vertical-align: middle;">
-                                        <div style="display:flex; flex-direction:column; gap:4px;">
-                                            <strong style="color:#1e293b; font-size:0.95rem;">${__esc(r.name)}</strong>
-                                            <div>
-                                                <code style="font-size:0.7rem; color:#6366f1; background:#f0f4ff; padding:2px 6px; border-radius:4px; font-weight:600;">${__esc(r.slug)}</code>
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td style="vertical-align: middle;">
-                                        ${r.permissions && r.permissions.length ? `
-                                            <div style="display:flex; flex-wrap:wrap; gap:6px;">
-                                                ${r.permissions.map(p => `
-                                                    <span style="font-size:0.65rem; font-weight: 700; color:#6366f1; background:#eef2ff; padding:2px 8px; border-radius:6px; border:1px solid #d0d7ff;" title="${__esc(p.type)}">
-                                                        ${__esc(p.name)}
-                                                    </span>
-                                                `).join('')}
-                                            </div>
-                                        ` : `<div style="font-size:0.7rem; color:#94a3b8; font-style:italic; font-weight: 600;">No permissions assigned.</div>`}
-                                    </td>
-                                    <td style="text-align: center; vertical-align: middle;">
-                                        <span class="adm-pill ${r.is_active ? 'adm-pill-approved' : 'adm-pill-pending'}" style="font-size:0.65rem; min-width:65px; text-align:center; font-weight: 700; text-transform: uppercase;">
-                                            ${r.is_active ? 'Active' : 'Inactive'}
-                                        </span>
-                                    </td>
-                                    <td style="text-align: center; vertical-align: middle;">
-                                        <label class="adm-switch" style="margin: 0 auto;">
-                                            <input type="checkbox" class="role-status-toggle" data-id="${r.id}" ${r.is_active ? 'checked' : ''} ${isSuper ? 'disabled' : ''}>
-                                            <span class="adm-switch-slider"></span>
-                                        </label>
-                                    </td>
-                                </tr>`;
-                            }).join('')}
-                        </tbody>
-                    </table>
-                </div>`;
-
-            rolesContainer.querySelectorAll('.role-status-toggle').forEach(sw => {
-                sw.onchange = async () => {
-                    try {
-                        const res = await authFetch(`${BASE_URL}/api/auth/admin/roles/${sw.dataset.id}/toggle`, { method: 'PATCH' });
-                        if (res.ok) {
-                            _showToast('Role status updated');
-                            loadRoleList();
-                        } else {
-                            const errData = await res.json();
-                            _showToast(errData.error || 'Failed to update status', 'error');
-                            sw.checked = !sw.checked;
-                        }
-                    } catch (e) {
-                        _showToast(e.message, 'error');
-                        sw.checked = !sw.checked;
-                    }
-                };
-            });
-            feather.replace();
-        } catch (e) {
-            rolesContainer.innerHTML = `<div class="adm-empty" style="color:#ef4444;"><span>⚠️</span>Error loading roles: ${e.message}</div>`;
-        }
-    };
-
-    loadRoleList();
-}
-
-function _wireAssignRoleSubpage(container) {
-    // Back Button
-    const backBtn = container.querySelector('#adm-users-roles-back-btn');
-    if (backBtn) {
-        backBtn.onclick = () => {
-            container.style.display = 'none';
-            const mainContainer = container.previousElementSibling;
-            if (mainContainer) mainContainer.style.display = '';
-        };
-    }
-
-    const assignEditorAccordion = container.querySelector('#assign-role-editor-accordion');
-    if (assignEditorAccordion) {
-        assignEditorAccordion.querySelector('.adm-accordion-header').onclick = () => assignEditorAccordion.classList.toggle('open');
-    }
-
-    const usersListAccordion = container.querySelector('#users-list-accordion');
-    if (usersListAccordion) {
-        usersListAccordion.querySelector('.adm-accordion-header').onclick = () => usersListAccordion.classList.toggle('open');
-    }
-
-    const usersContainer = container.querySelector('#adm-users-list-container');
     let cachedUsers = [];
     let instF, roleF;
 
     const renderFilteredUsers = () => {
-        const searchQuery = (container.querySelector('#adm-users-search-input')?.value || '').toLowerCase().trim();
+        const searchQuery = (content.querySelector('#adm-users-search-input')?.value || '').toLowerCase().trim();
 
-        const grouped = [];
-        const map = new Map();
-        cachedUsers.forEach(u => {
-            const key = u.email;
-            if (map.has(key)) {
-                const existing = map.get(key);
-                if (u.role_name && !existing.roles.includes(u.role_name)) {
-                    existing.roles.push(u.role_name);
-                }
-            } else {
-                const copy = { ...u, roles: u.role_name ? [u.role_name] : [] };
-                grouped.push(copy);
-                map.set(key, copy);
-            }
-        });
-
-        grouped.forEach(u => {
-            u.role_name = u.roles.length ? u.roles.join(', ') : 'Unassigned';
-        });
-
-        const filtered = grouped.filter(u => {
+        const filtered = cachedUsers.filter(u => {
             const name = (u.name || '').toLowerCase();
             const email = (u.email || '').toLowerCase();
             return !searchQuery || name.includes(searchQuery) || email.includes(searchQuery);
@@ -1592,7 +1208,7 @@ function _wireAssignRoleSubpage(container) {
         if (badgeEl) {
             badgeEl.textContent = filtered.length;
         }
-        const accordionCount = container.querySelector('#users-list-count');
+        const accordionCount = content.querySelector('#users-list-count');
         if (accordionCount) {
             accordionCount.textContent = filtered.length;
             accordionCount.style.display = 'inline-block';
@@ -1683,11 +1299,11 @@ function _wireAssignRoleSubpage(container) {
             console.error('Failed to load dynamic filter lookups', err);
         }
 
-        const instOptsHtml = (_state.cachedInstitutesList || []).map(i =>
+        const instOptsHtml = (_state.cachedInstitutesList || []).map(i => 
             `<option value="${i.id}" ${instFilter == i.id ? 'selected' : ''}>${__esc(i.name)}</option>`
         ).join('');
 
-        const roleOptsHtml = (_state.cachedRolesList || []).map(r =>
+        const roleOptsHtml = (_state.cachedRolesList || []).map(r => 
             `<option value="${r.id}" ${roleFilter == r.id ? 'selected' : ''}>${__esc(r.name)}</option>`
         ).join('');
 
@@ -1733,7 +1349,7 @@ function _wireAssignRoleSubpage(container) {
         } catch (err) { usersContainer.innerHTML = `Error loading users: ${err.message}`; }
     };
 
-    const searchInput = container.querySelector('#adm-users-search-input');
+    const searchInput = content.querySelector('#adm-users-search-input');
     if (searchInput) {
         searchInput.oninput = () => renderFilteredUsers();
     }
@@ -1855,81 +1471,237 @@ function _wireAssignRoleSubpage(container) {
                 return;
             }
 
-            // Populate the Assign Role Accordion on top!
-            const placeholder = container.querySelector('#adm-assign-placeholder');
-            const form = container.querySelector('#adm-assign-editor-form');
+            // Reuse the role option tags from the existing select on the page
+            const existingRoleSelect = content.querySelector('#adm-m-role-select');
+            let rolesOptionsHtml = existingRoleSelect ? existingRoleSelect.innerHTML : '';
 
-            if (placeholder) placeholder.style.display = 'none';
-            if (form) form.style.display = 'flex';
+            // Retrieve category name and institute name
+            const instituteName = data.institute_name || 'None/Independent';
+            const categoryName = data.category_name || 'N/A';
 
-            // Populate text inputs
-            container.querySelector('#adm-editor-email').value = data.email || '';
-            container.querySelector('#adm-editor-inst').value = data.institute_name || 'None/Independent';
-            container.querySelector('#adm-editor-cat').value = data.category_name || 'N/A';
+            // Create Modal Container
+            const modal = document.createElement('div');
+            modal.id = 'adm-manage-user-modal';
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(15, 23, 42, 0.65);
+                backdrop-filter: blur(8px);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 99999;
+                opacity: 0;
+                transition: opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            `;
 
-            // Populate the role options select
-            const editorRoleSelect = container.querySelector('#adm-editor-role-select');
-            const existingRoleSelect = document.querySelector('#adm-m-role-select');
-            if (editorRoleSelect && existingRoleSelect) {
-                editorRoleSelect.innerHTML = existingRoleSelect.innerHTML;
-                if (data.role_id) {
-                    editorRoleSelect.value = data.role_id;
-                }
+            modal.innerHTML = `
+                <div style="
+                    background: #fff;
+                    width: 100%;
+                    max-width: 480px;
+                    border-radius: 16px;
+                    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+                    overflow: hidden;
+                    transform: scale(0.95);
+                    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+                    border: 1px solid #e2e8f0;
+                ">
+                    <!-- Header -->
+                    <div style="padding: 1.25rem 1.5rem; background: linear-gradient(135deg, #f5f3ff, #fff); border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; gap: 12px;">
+                        <div style="width: 36px; height: 36px; border-radius: 50%; background: #eef2ff; color: #6366f1; display: flex; align-items: center; justify-content: center;">
+                            <i data-feather="users" style="width: 18px; height: 18px;"></i>
+                        </div>
+                        <div>
+                            <h3 style="margin: 0; font-size: 1rem; font-weight: 800; color: #1e293b; font-family: 'Outfit', sans-serif;">Manage User Access</h3>
+                            <p style="margin: 0; font-size: 0.65rem; color: #6366f1; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Assign Role & Affiliation</p>
+                        </div>
+                    </div>
+
+                    <!-- Body -->
+                    <div style="padding: 1.5rem; display: flex; flex-direction: column; gap: 1.25rem; font-family: 'Inter', sans-serif;">
+                        <!-- Email (Read-only) -->
+                        <div>
+                            <label style="display: block; font-size: 0.75rem; font-weight: 700; color: #475569; margin-bottom: 6px;">User Email</label>
+                            <input type="text" value="${__esc(data.email)}" disabled style="
+                                width: 100%;
+                                background: #f8fafc;
+                                color: #64748b;
+                                cursor: not-allowed;
+                                border: 1.5px solid #e2e8f0;
+                                padding: 10px 12px;
+                                border-radius: 8px;
+                                font-size: 0.85rem;
+                                font-weight: 600;
+                            " />
+                        </div>
+
+                        <!-- Institute (Read-only) -->
+                        <div>
+                            <label style="display: block; font-size: 0.75rem; font-weight: 700; color: #475569; margin-bottom: 6px;">User Institute</label>
+                            <input type="text" value="${__esc(instituteName)}" disabled style="
+                                width: 100%;
+                                background: #f8fafc;
+                                color: #64748b;
+                                cursor: not-allowed;
+                                border: 1.5px solid #e2e8f0;
+                                padding: 10px 12px;
+                                border-radius: 8px;
+                                font-size: 0.85rem;
+                                font-weight: 600;
+                            " />
+                        </div>
+
+                        <!-- Category (Read-only) -->
+                        <div>
+                            <label style="display: block; font-size: 0.75rem; font-weight: 700; color: #475569; margin-bottom: 6px;">User Category</label>
+                            <input type="text" value="${__esc(categoryName)}" disabled style="
+                                width: 100%;
+                                background: #f8fafc;
+                                color: #64748b;
+                                cursor: not-allowed;
+                                border: 1.5px solid #e2e8f0;
+                                padding: 10px 12px;
+                                border-radius: 8px;
+                                font-size: 0.85rem;
+                                font-weight: 600;
+                            " />
+                        </div>
+
+                        <!-- Role (Editable) -->
+                        <div>
+                            <label style="display: block; font-size: 0.75rem; font-weight: 700; color: #475569; margin-bottom: 6px;">Assign / Change Role</label>
+                            <select id="adm-modal-role-select" style="
+                                width: 100%;
+                                padding: 10px 12px;
+                                border-radius: 8px;
+                                font-size: 0.85rem;
+                                font-weight: 600;
+                                border: 1.5px solid #cbd5e1;
+                                background: #fff;
+                                outline: none;
+                                cursor: pointer;
+                                transition: border-color 0.2s;
+                            ">
+                                ${rolesOptionsHtml}
+                            </select>
+                        </div>
+
+                        <!-- Warning for LI-Coordinator -->
+                        <div id="adm-modal-warning" style="
+                            display: none;
+                            padding: 12px 16px;
+                            background: #fffbeb;
+                            border: 1px solid #fde68a;
+                            border-radius: 8px;
+                            color: #b45309;
+                            font-size: 0.75rem;
+                            font-weight: 600;
+                            line-height: 1.5;
+                        ">
+                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                                <i data-feather="alert-triangle" style="width: 14px; height: 14px; color: #d97706;"></i>
+                                <strong style="color: #92400e;">Warning</strong>
+                            </div>
+                            Assigning a new LI-Coordinator will deactivate the current active coordinator for this institute.
+                        </div>
+
+                        <div id="adm-modal-error" style="display: none; color: #ef4444; font-size: 0.75rem; font-weight: 700; font-family: 'Inter', sans-serif;"></div>
+                    </div>
+
+                    <!-- Footer -->
+                    <div style="padding: 1rem 1.5rem; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; justify-content: flex-end; gap: 10px;">
+                        <button id="adm-modal-cancel-btn" style="
+                            height: 38px;
+                            font-size: 0.8rem;
+                            font-weight: 700;
+                            padding: 0 1.25rem;
+                            border-radius: 8px;
+                            background: #fff;
+                            color: #475569;
+                            border: 1px solid #cbd5e1;
+                            cursor: pointer;
+                            transition: background-color 0.2s;
+                        ">Cancel</button>
+                        <button id="adm-modal-assign-btn" style="
+                            height: 38px;
+                            font-size: 0.8rem;
+                            font-weight: 700;
+                            padding: 0 1.5rem;
+                            border-radius: 8px;
+                            background: #6366f1;
+                            color: #fff;
+                            border: 1px solid #6366f1;
+                            cursor: pointer;
+                            transition: opacity 0.2s;
+                        ">Assign Role</button>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(modal);
+            feather.replace();
+
+            // Animate Modal Entrance
+            setTimeout(() => {
+                modal.style.opacity = '1';
+                modal.firstElementChild.style.transform = 'scale(1)';
+            }, 50);
+
+            // Populate currently selected role
+            const modalRoleSelect = modal.querySelector('#adm-modal-role-select');
+            if (data.role_id) {
+                modalRoleSelect.value = data.role_id;
             }
 
-            // Setup LI-Coordinator Warning alert toggling
-            const warningEl = container.querySelector('#adm-editor-warning');
+            // Function to toggle LI-Coordinator warning
             const checkRoleWarning = () => {
-                if (!editorRoleSelect || !warningEl) return;
-                const selectedOption = editorRoleSelect.options[editorRoleSelect.selectedIndex];
+                const warningDiv = modal.querySelector('#adm-modal-warning');
+                const selectedOption = modalRoleSelect.options[modalRoleSelect.selectedIndex];
                 const selectedText = selectedOption ? selectedOption.textContent.trim() : '';
+                
+                // Show warning specifically if LI-Coordinator is selected
                 if (selectedText === 'LI-Coordinator') {
-                    warningEl.style.display = 'block';
+                    warningDiv.style.display = 'block';
                 } else {
-                    warningEl.style.display = 'none';
+                    warningDiv.style.display = 'none';
                 }
             };
-            editorRoleSelect.onchange = checkRoleWarning;
+
+            // Bind warning check on role change and initially
+            modalRoleSelect.addEventListener('change', checkRoleWarning);
             checkRoleWarning();
 
-            // Clear errors
-            const errorDiv = container.querySelector('#adm-editor-error');
-            if (errorDiv) {
-                errorDiv.textContent = '';
-                errorDiv.style.display = 'none';
-            }
-
-            // Open the Assign Role accordion if it was closed
-            if (assignEditorAccordion && !assignEditorAccordion.classList.contains('open')) {
-                assignEditorAccordion.classList.add('open');
-            }
-
-            // Scroll up to the editor accordion smoothly
-            assignEditorAccordion.scrollIntoView({ behavior: 'smooth', block: 'start' });
-
-            // Setup button interactions
-            const cancelBtn = container.querySelector('#adm-editor-cancel-btn');
-            const submitBtn = container.querySelector('#adm-editor-submit-btn');
-
-            cancelBtn.onclick = () => {
-                if (form) form.style.display = 'none';
-                if (placeholder) placeholder.style.display = 'block';
-                if (warningEl) warningEl.style.display = 'none';
+            // Close Modal handler
+            const closeModal = () => {
+                modal.style.opacity = '0';
+                modal.firstElementChild.style.transform = 'scale(0.95)';
+                setTimeout(() => modal.remove(), 250);
             };
 
-            submitBtn.onclick = async () => {
-                const selectedRoleId = editorRoleSelect.value;
+            modal.querySelector('#adm-modal-cancel-btn').addEventListener('click', closeModal);
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) closeModal();
+            });
+
+            // Handle Submit Assignment
+            const assignBtn = modal.querySelector('#adm-modal-assign-btn');
+            const errorDiv = modal.querySelector('#adm-modal-error');
+
+            assignBtn.addEventListener('click', async () => {
+                const selectedRoleId = modalRoleSelect.value;
                 if (!selectedRoleId) {
-                    if (errorDiv) {
-                        errorDiv.textContent = 'Please select a role to assign.';
-                        errorDiv.style.display = 'block';
-                    }
+                    errorDiv.textContent = 'Please select a role to assign.';
+                    errorDiv.style.display = 'block';
                     return;
                 }
 
-                submitBtn.disabled = true;
-                submitBtn.textContent = 'Updating...';
-                if (errorDiv) errorDiv.style.display = 'none';
+                assignBtn.disabled = true;
+                assignBtn.textContent = 'Updating...';
+                errorDiv.style.display = 'none';
 
                 try {
                     const postRes = await authFetch(`${BASE_URL}/api/auth/admin/users/assign-role`, {
@@ -1945,31 +1717,28 @@ function _wireAssignRoleSubpage(container) {
 
                     if (postRes.ok) {
                         _showToast('Role assigned successfully!', 'success');
-                        if (form) form.style.display = 'none';
-                        if (placeholder) placeholder.style.display = 'block';
-                        if (warningEl) warningEl.style.display = 'none';
-                        loadUserList(instF?.value || '', roleF?.value || '');
+                        closeModal();
+                        // Reload users list to show the updated roles instantly
+                        if (typeof loadUserList === 'function') {
+                            loadUserList();
+                        }
                     } else {
                         const errPayload = await postRes.json();
-                        if (errorDiv) {
-                            errorDiv.textContent = errPayload.error || 'Failed to update user role.';
-                            errorDiv.style.display = 'block';
-                        }
-                        submitBtn.disabled = false;
-                        submitBtn.textContent = 'Assign Role';
+                        errorDiv.textContent = errPayload.error || 'Failed to update user role.';
+                        errorDiv.style.display = 'block';
+                        assignBtn.disabled = false;
+                        assignBtn.textContent = 'Assign Role';
                     }
                 } catch (err) {
                     console.error('Role update error:', err);
-                    if (errorDiv) {
-                        errorDiv.textContent = 'An unexpected network error occurred.';
-                        errorDiv.style.display = 'block';
-                    }
-                    submitBtn.disabled = false;
-                    submitBtn.textContent = 'Assign Role';
+                    errorDiv.textContent = 'An unexpected network error occurred.';
+                    errorDiv.style.display = 'block';
+                    assignBtn.disabled = false;
+                    assignBtn.textContent = 'Assign Role';
                 }
-            };
+            });
 
-            _showToast('User details loaded into Editor', 'success');
+            _showToast('User details loaded', 'success');
 
         } catch (e) {
             console.error('Failed to fetch user details:', e);
@@ -1977,7 +1746,184 @@ function _wireAssignRoleSubpage(container) {
         }
     };
 
+    const loadRoleList = async () => {
+        try {
+            const res = await authFetch(API.ADMIN_ROLES);
+            const list = res.ok ? await res.json() : [];
+
+            // Update Accordion Badge
+            const rolesAccordionCount = content.querySelector('#roles-list-count');
+            if (rolesAccordionCount) {
+                rolesAccordionCount.textContent = list.length;
+                rolesAccordionCount.style.display = 'inline-block';
+            }
+
+            rolesContainer.innerHTML = `
+                <div class="adm-crud-list" style="background:#fff; border:1px solid #e2e8f0; border-radius:12px; overflow:hidden;">
+                    ${list.map(r => `
+                    <div class="adm-crud-row" style="padding:1.25rem 1.5rem; border-bottom:1px solid #f1f5f9; display:flex; align-items:center; justify-content:space-between;">
+                        <div style="display:flex; align-items:center; gap:1.25rem; flex:1">
+                            <div style="width:42px; height:42px; border-radius:10px; background:#f5f3ff; color:#6366f1; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:0.8rem; border:1px solid #e0e7ff;">
+                                L${r.level || '—'}
+                            </div>
+                            <div style="flex:1">
+                                <div style="display:flex; align-items:center; gap:0.75rem;">
+                                    <strong style="color:#1e293b; font-size:0.95rem;">${__esc(r.name)}</strong>
+                                    <code style="font-size:0.7rem; color:#6366f1; background:#f0f4ff; padding:1px 6px; border-radius:4px;">${__esc(r.slug)}</code>
+                                </div>
+                                ${r.permissions && r.permissions.length ? `
+                                    <div style="margin-top:0.75rem; display:flex; flex-wrap:wrap; gap:4px;">
+                                        ${r.permissions.map(p => `
+                                            <span style="font-size:0.6rem; color:#6366f1; background:#eef2ff; padding:1px 6px; border-radius:4px; border:1px solid #d0d7ff;" title="${__esc(p.type)}">
+                                                ${__esc(p.name)}
+                                            </span>
+                                        `).join('')}
+                                    </div>
+                                ` : `<div style="font-size:0.65rem; color:#94a3b8; margin-top:0.5rem; font-style:italic;">No permissions assigned.</div>`}
+                            </div>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:1.5rem;">
+                            <span class="adm-pill ${r.is_active ? 'adm-pill-approved' : 'adm-pill-pending'}" style="font-size:0.65rem; min-width:60px; text-align:center;">
+                                ${r.is_active ? 'Active' : 'Inactive'}
+                            </span>
+                            <label class="adm-switch">
+                                <input type="checkbox" class="role-status-toggle" data-id="${r.id}" ${r.is_active ? 'checked' : ''}>
+                                <span class="adm-switch-slider"></span>
+                            </label>
+                        </div>
+                    </div>`).join('')}
+                </div>`;
+
+            rolesContainer.querySelectorAll('.role-status-toggle').forEach(sw => {
+                sw.onchange = async () => {
+                    try {
+                        const res = await authFetch(`${BASE_URL}/api/auth/admin/roles/${sw.dataset.id}/toggle`, { method: 'PATCH' });
+                        if (res.ok) {
+                            _showToast('Role status updated');
+                            loadRoleList();
+                        } else {
+                            const errData = await res.json();
+                            _showToast(errData.error || 'Failed to update status', 'error');
+                            sw.checked = !sw.checked;
+                        }
+                    } catch (e) {
+                        _showToast(e.message, 'error');
+                        sw.checked = !sw.checked;
+                    }
+                };
+            });
+            feather.replace();
+        } catch (e) {
+            rolesContainer.innerHTML = `<div class="adm-empty" style="color:#ef4444;"><span>⚠️</span>Error loading roles: ${e.message}</div>`;
+        }
+    };
+
+    // Wire nested directory accordions
+    const rolesListAccordion = content.querySelector('#roles-list-accordion');
+    if (rolesListAccordion) {
+        rolesListAccordion.querySelector('.adm-accordion-header').onclick = () => rolesListAccordion.classList.toggle('open');
+    }
+    const usersListAccordion = content.querySelector('#users-list-accordion');
+    if (usersListAccordion) {
+        usersListAccordion.querySelector('.adm-accordion-header').onclick = () => usersListAccordion.classList.toggle('open');
+    }
+
+    // Initial load
+    loadRoleList();
     loadUserList();
+
+    const roleSelect = content.querySelector('#adm-m-role-select');
+    const entityGroup = content.querySelector('#adm-m-entity-group');
+    const entityLabel = content.querySelector('#adm-m-entity-label');
+    const entitySelect = content.querySelector('#adm-m-entity-select');
+    const instSelect = content.querySelector('#adm-m-inst-select');
+
+    const checkRoleEntity = async () => {
+        const roleId = roleSelect.value;
+        const instId = instSelect.value;
+        const role = Array.from(roleSelect.options).find(o => o.value === roleId);
+        const roleName = role?.text?.toLowerCase() || '';
+
+        if (roleName.includes('system lead') || roleName.includes('system_lead')) {
+            entityGroup.style.display = 'block';
+            entityLabel.textContent = 'Select System for this Lead';
+            if (instId) await _loadEntities('systems', instId);
+            else entitySelect.innerHTML = '<option value="">— Select Institute First —</option>';
+        } else if (roleName.includes('subsystem lead') || roleName.includes('subsystem_lead')) {
+            entityGroup.style.display = 'block';
+            entityLabel.textContent = 'Select Subsystem for this Lead';
+            if (instId) await _loadEntities('subsystems', instId);
+            else entitySelect.innerHTML = '<option value="">— Select Institute First —</option>';
+        } else {
+            entityGroup.style.display = 'none';
+        }
+    };
+
+    roleSelect.onchange = checkRoleEntity;
+    instSelect.onchange = checkRoleEntity;
+
+    async function _loadEntities(type, instId) {
+        entitySelect.innerHTML = '<option value="">Loading...</option>';
+        entitySelect.disabled = false;
+        try {
+            const res = await authFetch(`${BASE_URL}/api/auth/admin/data/${type}?institute_id=${instId}`);
+            const data = res.ok ? await res.json() : [];
+
+            if (!data || data.length === 0) {
+                entitySelect.innerHTML = `<option value="">— No ${type} associated with this institute —</option>`;
+                entitySelect.disabled = true;
+                _showToast(`No ${type} found for this institute`, 'info');
+            } else {
+                entitySelect.innerHTML = '<option value="">— Select Entity —</option>' +
+                    data.map(e => `<option value="${e.id}">${__esc(e.name)} ${e.system_name ? `(Part of ${__esc(e.system_name)})` : ''}</option>`).join('');
+                entitySelect.disabled = false;
+            }
+        } catch (_) {
+            entitySelect.innerHTML = '<option value="">Error loading entities</option>';
+            entitySelect.disabled = true;
+        }
+    }
+
+    const btn = content.querySelector('#adm-m-assign-btn');
+    if (!btn) return;
+    btn.addEventListener('click', async () => {
+        const email = content.querySelector('#adm-m-assign-email')?.value.trim();
+        const roleId = roleSelect.value;
+        const instId = instSelect.value;
+        const catId = content.querySelector('#adm-m-cat-select')?.value;
+        const entityId = entitySelect.value;
+        const fb = content.querySelector('#adm-m-assign-fb');
+
+        const role = Array.from(roleSelect.options).find(o => o.value === roleId);
+        const roleName = role?.text?.toLowerCase() || '';
+        const isLead = roleName.includes('lead');
+
+        if (!email || !roleId || !instId || !catId || (isLead && !entityId)) {
+            fb.style.color = '#ef4444'; fb.textContent = 'Please fill all fields.';
+            return;
+        }
+
+        btn.disabled = true; fb.style.color = '#6366f1'; fb.textContent = 'Assigning…';
+        try {
+            const res = await authFetch(API.ADMIN_ASSIGN_ROLE, {
+                method: 'POST',
+                body: JSON.stringify({
+                    email,
+                    role_id: roleId,
+                    institute_id: instId,
+                    category_id: catId,
+                    entity_type: roleName.includes('subsystem') ? 'subsystem' : (roleName.includes('system') ? 'system' : null),
+                    entity_id: entityId
+                })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || data.error || 'Error');
+            fb.style.color = '#10b981'; fb.textContent = data.message || '✓ Access updated.';
+            loadUserList();
+        } catch (err) {
+            fb.style.color = '#ef4444'; fb.textContent = err.message;
+        } finally { btn.disabled = false; }
+    });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -3258,67 +3204,27 @@ function _wireHierarchicalPage(container, entity) {
                             contextData.innerHTML = '';
 
                             try {
-                                const dRes = await authFetch(`${BASE_URL}/api/auth/admin/users/details?identifier=${encodeURIComponent(email)}`);
+                                const dRes = await authFetch(`${BASE_URL}/api/auth/admin/user/details?email=${encodeURIComponent(email)}`);
                                 if (!dRes.ok) throw new Error();
                                 const d = await dRes.json();
 
                                 contextLoading.style.display = 'none';
                                 contextData.innerHTML = `
-                                    <div style="background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:1.25rem; box-shadow:0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03); display:flex; flex-direction:column; gap:1rem; font-family:'Inter', sans-serif;">
-                                        <!-- Card Header -->
-                                        <div style="display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid #f1f5f9; padding-bottom:0.75rem;">
-                                            <span style="font-size:0.75rem; font-weight:800; color:#6366f1; text-transform:uppercase; letter-spacing:0.05em;">Candidate Profile Card</span>
-                                            <span style="font-size:0.7rem; font-weight:600; color:#94a3b8;">ID: ${__esc(d.user_id ? d.user_id.substring(0,8) : '—')}...</span>
+                                    <div style="display:flex; flex-direction:column; gap:8px;">
+                                        <div style="display:flex; align-items:center; gap:8px;">
+                                            <span style="font-size:1rem;">👤</span>
+                                            <strong style="font-size:0.9rem; color:#1e293b;">${_esc(d.name)}</strong>
                                         </div>
-
-                                        <!-- Name -->
-                                        <div style="display:flex; align-items:flex-start; gap:10px;">
-                                            <div style="width:28px; height:28px; border-radius:6px; background:#eef2ff; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
-                                                <i data-feather="user" style="width:14px; height:14px; color:#6366f1;"></i>
-                                            </div>
-                                            <div style="display:flex; flex-direction:column;">
-                                                <span style="font-size:0.7rem; color:#64748b; font-weight:600; text-transform:uppercase; letter-spacing:0.02em;">Full Name</span>
-                                                <strong style="font-size:0.9rem; color:#1e293b; font-weight:700;">${__esc(d.name || '')}</strong>
-                                            </div>
+                                        <div style="display:flex; align-items:center; gap:8px;">
+                                            <span style="font-size:1rem;">🏢</span>
+                                            <span style="font-size:0.8rem; color:#475569;">${_esc(d.institutes.join(', '))}</span>
                                         </div>
-
-                                        <!-- Institute -->
-                                        <div style="display:flex; align-items:flex-start; gap:10px;">
-                                            <div style="width:28px; height:28px; border-radius:6px; background:#eef2ff; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
-                                                <i data-feather="home" style="width:14px; height:14px; color:#6366f1;"></i>
-                                            </div>
-                                            <div style="display:flex; flex-direction:column;">
-                                                <span style="font-size:0.7rem; color:#64748b; font-weight:600; text-transform:uppercase; letter-spacing:0.02em;">Affiliated Institute</span>
-                                                <span style="font-size:0.85rem; color:#334155; font-weight:600;">${__esc(d.institute_name || d.institutes || 'Independent')}</span>
-                                            </div>
+                                        <div style="display:flex; align-items:center; gap:8px;">
+                                            <span style="font-size:1rem;">🏷️</span>
+                                            <span style="font-size:0.75rem; color:#6366f1; font-weight:700; text-transform:uppercase;">${_esc(d.category)}</span>
                                         </div>
-
-                                        <!-- Category -->
-                                        <div style="display:flex; align-items:flex-start; gap:10px;">
-                                            <div style="width:28px; height:28px; border-radius:6px; background:#eef2ff; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
-                                                <i data-feather="tag" style="width:14px; height:14px; color:#6366f1;"></i>
-                                            </div>
-                                            <div style="display:flex; flex-direction:column;">
-                                                <span style="font-size:0.7rem; color:#64748b; font-weight:600; text-transform:uppercase; letter-spacing:0.02em;">User Category</span>
-                                                <span style="font-size:0.8rem; color:#6366f1; font-weight:800; text-transform:uppercase; letter-spacing:0.02em;">${__esc(d.category_name || d.category || 'N/A')}</span>
-                                            </div>
-                                        </div>
-
-                                        <!-- Supervisor (Conditional Student Check) -->
-                                        ${(d.category_name || '').toLowerCase().includes('student') && d.supervisor_name ? `
-                                        <div style="display:flex; align-items:flex-start; gap:10px; background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:10px; margin-top:0.25rem;">
-                                            <div style="width:28px; height:28px; border-radius:6px; background:#fef3c7; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
-                                                <i data-feather="users" style="width:14px; height:14px; color:#d97706;"></i>
-                                            </div>
-                                            <div style="display:flex; flex-direction:column;">
-                                                <span style="font-size:0.7rem; color:#b45309; font-weight:700; text-transform:uppercase; letter-spacing:0.02em;">Assigned Supervisor</span>
-                                                <span style="font-size:0.85rem; color:#92400e; font-weight:800;">${__esc(d.supervisor_name)}</span>
-                                            </div>
-                                        </div>
-                                        ` : ''}
                                     </div>
                                 `;
-                                feather.replace({ 'stroke-width': 2 });
                             } catch (_) {
                                 contextLoading.style.display = 'none';
                                 contextData.innerHTML = '<div style="font-size:0.8rem; color:#ef4444;">No user details available</div>';

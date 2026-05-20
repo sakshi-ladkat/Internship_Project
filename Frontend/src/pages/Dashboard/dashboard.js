@@ -2,6 +2,7 @@ import { authFetch, getAccessToken, logout } from '../../utils/auth.js';
 import { API } from '../../config/api.js';
 import { openReviewModal } from './reviewModal.js';
 import { renderHeader } from '../../components/header.js';
+import { renderAdminDashboard } from '../AdminDashboard/adminDashboard.js';
 import Cropper from 'cropperjs';
 import 'cropperjs/dist/cropper.css';
 
@@ -96,13 +97,16 @@ function _renderDashboardShell(app, startInProfile) {
     const navDash = app.querySelector('#db-nav-dashboard');
     const navProf = app.querySelector('#db-nav-profile');
     const navSsh = app.querySelector('#db-nav-ssh');
-    const navAdmin = app.querySelector('#db-nav-admin');
     const navInvite = app.querySelector('#db-nav-invite');
     const navHistory = app.querySelector('#db-nav-history');
 
+    const navApps = app.querySelector('#db-nav-apps');
+    const navWorkflows = app.querySelector('#db-nav-workflows');
+    const navModify = app.querySelector('#db-nav-modify');
+
     function renderTabDashboard() {
         localStorage.setItem('db_active_tab', 'dashboard');
-        [navDash, navProf, navSsh, navInvite, navHistory].forEach(n => n?.classList.remove('active'));
+        [navDash, navProf, navSsh, navInvite, navHistory, navApps, navWorkflows, navModify].forEach(n => n?.classList.remove('active'));
         navDash?.classList.add('active');
         if (isUserOnly) {
             mainContent.innerHTML = `<div id="tracker-body" class="db-tracker-card"><div class="db-loading-inline"><div class="spinner"></div></div></div>`;
@@ -196,7 +200,7 @@ function _renderDashboardShell(app, startInProfile) {
 
     function renderTabProfile() {
         localStorage.setItem('db_active_tab', 'profile');
-        [navDash, navProf, navSsh, navInvite, navHistory].forEach(n => n?.classList.remove('active'));
+        [navDash, navProf, navSsh, navInvite, navHistory, navApps, navWorkflows, navModify].forEach(n => n?.classList.remove('active'));
         navProf?.classList.add('active');
 
         // Render immediately with cached data — no spinner
@@ -221,7 +225,7 @@ function _renderDashboardShell(app, startInProfile) {
 
     function renderTabSSH() {
         localStorage.setItem('db_active_tab', 'ssh');
-        [navDash, navProf, navSsh, navInvite, navHistory].forEach(n => n?.classList.remove('active'));
+        [navDash, navProf, navSsh, navInvite, navHistory, navApps, navWorkflows, navModify].forEach(n => n?.classList.remove('active'));
         navSsh?.classList.add('active');
         mainContent.innerHTML = buildSshSetupHtml();
         _wireSshUpload(mainContent, renderTabDashboard);
@@ -229,7 +233,7 @@ function _renderDashboardShell(app, startInProfile) {
     }
     function renderTabUploadId() {
         localStorage.setItem('db_active_tab', 'upload_id');
-        [navDash, navProf, navSsh, navInvite, navHistory].forEach(n => n?.classList.remove('active'));
+        [navDash, navProf, navSsh, navInvite, navHistory, navApps, navWorkflows, navModify].forEach(n => n?.classList.remove('active'));
         const navUpload = app.querySelector('#db-nav-upload-id');
         if (navUpload) navUpload.classList.add('active');
         mainContent.innerHTML = buildUploadIdHtml(_myAppData.application);
@@ -240,7 +244,7 @@ function _renderDashboardShell(app, startInProfile) {
 
     function renderTabInvite() {
         localStorage.setItem('db_active_tab', 'invite');
-        [navDash, navProf, navSsh, navInvite, navHistory].forEach(n => n?.classList.remove('active'));
+        [navDash, navProf, navSsh, navInvite, navHistory, navApps, navWorkflows, navModify].forEach(n => n?.classList.remove('active'));
         navInvite?.classList.add('active');
         mainContent.innerHTML = buildInviteUserHtml();
         _wireInviteUser(mainContent);
@@ -249,7 +253,7 @@ function _renderDashboardShell(app, startInProfile) {
 
     function renderTabHistory() {
         localStorage.setItem('db_active_tab', 'history');
-        [navDash, navProf, navSsh, navInvite, navHistory].forEach(n => n?.classList.remove('active'));
+        [navDash, navProf, navSsh, navInvite, navHistory, navApps, navWorkflows, navModify].forEach(n => n?.classList.remove('active'));
         navHistory?.classList.add('active');
 
         mainContent.innerHTML = `
@@ -261,15 +265,62 @@ function _renderDashboardShell(app, startInProfile) {
         feather.replace();
     }
 
+    async function renderTabApps() {
+        localStorage.setItem('db_active_tab', 'apps');
+        [navDash, navProf, navSsh, navInvite, navHistory, navApps, navWorkflows, navModify].forEach(n => n?.classList.remove('active'));
+        navApps?.classList.add('active');
+        mainContent.innerHTML = `<div class="db-loading-inline"><div class="spinner"></div> Loading applications…</div>`;
+        await renderAdminDashboard(mainContent, 'applications');
+        const sidebar = mainContent.querySelector('.admin-sidebar');
+        if (sidebar) sidebar.style.display = 'none';
+        const main = mainContent.querySelector('.admin-main');
+        if (main) main.style.padding = '2rem';
+        feather.replace();
+    }
+
+    async function renderTabWorkflows() {
+        localStorage.setItem('db_active_tab', 'workflows');
+        [navDash, navProf, navSsh, navInvite, navHistory, navApps, navWorkflows, navModify].forEach(n => n?.classList.remove('active'));
+        navWorkflows?.classList.add('active');
+        mainContent.innerHTML = `<div class="db-loading-inline"><div class="spinner"></div> Loading workflows…</div>`;
+        await renderAdminDashboard(mainContent, 'workflows');
+        const sidebar = mainContent.querySelector('.admin-sidebar');
+        if (sidebar) sidebar.style.display = 'none';
+        const main = mainContent.querySelector('.admin-main');
+        if (main) main.style.padding = '2rem';
+        feather.replace();
+    }
+
+    async function renderTabModify() {
+        localStorage.setItem('db_active_tab', 'modify');
+        [navDash, navProf, navSsh, navInvite, navHistory, navApps, navWorkflows, navModify].forEach(n => n?.classList.remove('active'));
+        navModify?.classList.add('active');
+        mainContent.innerHTML = `<div class="db-loading-inline"><div class="spinner"></div> Loading modify data…</div>`;
+        await renderAdminDashboard(mainContent, 'modify');
+        const sidebar = mainContent.querySelector('.admin-sidebar');
+        if (sidebar) sidebar.style.display = 'none';
+        const main = mainContent.querySelector('.admin-main');
+        if (main) main.style.padding = '2rem';
+        feather.replace();
+    }
+
     navDash?.addEventListener('click', renderTabDashboard);
     navProf?.addEventListener('click', renderTabProfile);
     navSsh?.addEventListener('click', renderTabSSH);
     navInvite?.addEventListener('click', renderTabInvite);
     navHistory?.addEventListener('click', renderTabHistory);
-    navAdmin?.addEventListener('click', () => { window.location.hash = '#/admin'; });
+
+    navApps?.addEventListener('click', renderTabApps);
+    navWorkflows?.addEventListener('click', renderTabWorkflows);
+    navModify?.addEventListener('click', renderTabModify);
 
     app.querySelector('#db-nav-upload-id')?.addEventListener('click', () => {
         renderTabUploadId();
+    });
+
+    app.querySelector('#reapplyBtnSidebar')?.addEventListener('click', () => {
+        localStorage.removeItem('registration_draft');
+        window.location.hash = '#/registration?mode=reapply';
     });
 
     const savedTab = localStorage.getItem('db_active_tab') || 'dashboard';
@@ -277,6 +328,9 @@ function _renderDashboardShell(app, startInProfile) {
     else if (savedTab === 'ssh' && navSsh) renderTabSSH();
     else if (savedTab === 'invite' && navInvite) renderTabInvite();
     else if (savedTab === 'history' && navHistory) renderTabHistory();
+    else if (savedTab === 'apps' && navApps) renderTabApps();
+    else if (savedTab === 'workflows' && navWorkflows) renderTabWorkflows();
+    else if (savedTab === 'modify' && navModify) renderTabModify();
     else renderTabDashboard();
 
     app.querySelector('#db-logout-btn')?.addEventListener('click', (e) => { e.preventDefault(); logout(); });
@@ -306,53 +360,85 @@ function buildSidebar(user = {}, profile = {}, roles = [], canSetupSsh = false, 
     const isReviewer = roles.some(r => REVIEW_ROLE_CONFIG[r.slug] || r.slug === 'super_admin');
     const rolesHtml = isReviewer ? `<div class="sb-section"><p class="sb-section-label">Roles</p><div class="sb-role-badges">${roleBadges}</div></div>` : '';
 
-    const needsIdCard = myApp && myApp.status === 'id_card_reupload_required';
+        const needsIdCard = myApp && myApp.status === 'id_card_reupload_required';
+        const canReapply = myApp && (myApp.status === 'rejected' || myApp.status === 'declined');
 
-    return `<aside class="db-sidebar">
-        <div class="sb-profile-hero" style="display: flex; flex-direction: column; align-items: center; text-align: center; padding: 1.5rem 1rem;">
-            <div class="sb-avatar" style="margin-bottom: 0.75rem;">
-                <div class="sb-avatar-circle" style="width: 64px; height: 64px; font-size: 1.5rem; background:linear-gradient(135deg,var(--primary-600) 0%,var(--primary-800) 100%); display: flex; align-items: center; justify-content: center; border-radius: 50%; color: white; font-weight: 800; box-shadow: 0 4px 12px rgba(0,0,0,0.15); border: 2px solid rgba(255,255,255,0.2);">
-                    ${escHtml(initials)}
-                </div>
-            </div>
-            <div class="sb-hero-info">
-                <h2 class="sb-name" style="margin: 0; font-size: 1.1rem; font-weight: 800;">${escHtml(fullName)}</h2>
-                <p class="sb-email" style="margin: 0.2rem 0; font-size: 0.8rem; opacity: 0.7; word-break: break-all;">${escHtml(email)}</p>
-                ${(affiliation?.institute_name || affiliation?.institute_code) ? `
-                <div style="margin: 0.5rem 0; display: flex; flex-direction: column; align-items: center; gap: 0.3rem;">
-                    <div style="background: rgba(255, 255, 255, 0.08); backdrop-filter: blur(4px); border: 1px solid rgba(255, 255, 255, 0.15); padding: 0.4rem 0.8rem; border-radius: 10px; display: flex; align-items: center; gap: 0.5rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
-                        <i data-feather="home" style="width: 13px; height: 13px; color: #fffbeb; opacity: 0.9;"></i>
-                        <span title="${escHtml(affiliation.institute_name || '')}" style="font-size: 0.72rem; color: #fffbeb; font-weight: 800; white-space: nowrap; letter-spacing: 0.02em;">${escHtml(affiliation.institute_code || affiliation.institute_name)}</span>
+        const ADMIN_PERMISSIONS = [
+            'view_applications', 'manage_users', 'manage_roles', 'assign_roles', 
+            'approve_identity', 'manage_institutes', 'manage_systems', 'manage_services', 
+            'manage_categories', 'manage_durations', 'manage_salutations', 'manage_requests', 
+            'system_settings', 'view_logs', 'manage_workflows'
+        ];
+        const canInvite = hasPermission('invite_users');
+        const hasViewApps = hasPermission('view_applications');
+        const hasWorkflows = hasPermission('manage_workflows');
+        const hasModifyData = [
+            'manage_institutes', 'manage_users', 'manage_roles', 'assign_roles', 'manage_categories',
+            'manage_systems', 'manage_services', 'manage_durations', 'manage_salutations',
+            'manage_requests'
+        ].some(p => hasPermission(p));
+
+        let adminButtonsHtml = '';
+        if (hasViewApps) {
+            adminButtonsHtml += `<button class="sb-nav-btn" id="db-nav-apps"><i data-feather="monitor"></i> Applications</button>`;
+        }
+        if (hasWorkflows) {
+            adminButtonsHtml += `<button class="sb-nav-btn" id="db-nav-workflows"><i data-feather="git-merge"></i> Workflow Engine</button>`;
+        }
+        if (hasModifyData) {
+            adminButtonsHtml += `<button class="sb-nav-btn" id="db-nav-modify"><i data-feather="database"></i> Modify Data</button>`;
+        }
+
+        return `<aside class="db-sidebar">
+            <div class="sb-profile-hero" style="display: flex; flex-direction: column; align-items: center; text-align: center; padding: 1.5rem 1rem;">
+                <div class="sb-avatar" style="margin-bottom: 0.75rem;">
+                    <div class="sb-avatar-circle" style="width: 64px; height: 64px; font-size: 1.5rem; background:linear-gradient(135deg,var(--primary-600) 0%,var(--primary-800) 100%); display: flex; align-items: center; justify-content: center; border-radius: 50%; color: white; font-weight: 800; box-shadow: 0 4px 12px rgba(0,0,0,0.15); border: 2px solid rgba(255,255,255,0.2);">
+                        ${escHtml(initials)}
                     </div>
-                    ${affiliation.department ? `<div style="font-size: 0.65rem; color: #cbd5e1; font-weight: 600; letter-spacing: 0.03em;">${escHtml(affiliation.department)}</div>` : ''}
-                </div>` : ''}
-                <div style="margin-top: 0.5rem;">
-                    <span class="sb-status ${statusCls}" style="${statusStyle || ''}; display: inline-flex; align-items: center; padding: 0.25rem 0.75rem; border-radius: 99px; font-size: 0.7rem; font-weight: 800;">${escHtml(statusLabel)}</span>
+                </div>
+                <div class="sb-hero-info">
+                    <h2 class="sb-name" style="margin: 0; font-size: 1.1rem; font-weight: 800;">${escHtml(fullName)}</h2>
+                    <p class="sb-email" style="margin: 0.2rem 0; font-size: 0.8rem; opacity: 0.7; word-break: break-all;">${escHtml(email)}</p>
+                    ${(affiliation?.institute_name || affiliation?.institute_code) ? `
+                    <div style="margin: 0.5rem 0; display: flex; flex-direction: column; align-items: center; gap: 0.3rem;">
+                        <div style="background: rgba(255, 255, 255, 0.08); backdrop-filter: blur(4px); border: 1px solid rgba(255, 255, 255, 0.15); padding: 0.4rem 0.8rem; border-radius: 10px; display: flex; align-items: center; gap: 0.5rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+                            <i data-feather="home" style="width: 13px; height: 13px; color: #fffbeb; opacity: 0.9;"></i>
+                            <span title="${escHtml(affiliation.institute_name || '')}" style="font-size: 0.72rem; color: #fffbeb; font-weight: 800; white-space: nowrap; letter-spacing: 0.02em;">${escHtml(affiliation.institute_code || affiliation.institute_name)}</span>
+                        </div>
+                        ${affiliation.department ? `<div style="font-size: 0.65rem; color: #cbd5e1; font-weight: 600; letter-spacing: 0.03em;">${escHtml(affiliation.department)}</div>` : ''}
+                    </div>` : ''}
+                    <div style="margin-top: 0.5rem;">
+                        <span class="sb-status ${statusCls}" style="${statusStyle || ''}; display: inline-flex; align-items: center; padding: 0.25rem 0.75rem; border-radius: 99px; font-size: 0.7rem; font-weight: 800;">${escHtml(statusLabel)}</span>
+                    </div>
                 </div>
             </div>
-        </div>
-        <div class="sb-nav-scroll">
-            ${rolesHtml}
-            <div class="sb-section sb-section--grow">
-                <p class="sb-section-label">Navigation</p>
-                <div class="sb-nav-list">
-                    <button class="sb-nav-btn" id="db-nav-dashboard"><i data-feather="grid"></i> Dashboard</button>
-                    
-                    ${needsIdCard ? `
-                    <button class="sb-nav-btn" id="db-nav-upload-id" style="background: #fffbeb; color: #d97706; border: 1px solid #fde68a; animation: trkBadgePulse 2s infinite;">
-                        <i data-feather="upload-cloud"></i> Upload Valid ID Card
-                    </button>` : ''}
+            <div class="sb-nav-scroll">
+                ${rolesHtml}
+                <div class="sb-section sb-section--grow">
+                    <p class="sb-section-label">Navigation</p>
+                    <div class="sb-nav-list">
+                        <button class="sb-nav-btn" id="db-nav-dashboard"><i data-feather="grid"></i> Dashboard</button>
+                        
+                        ${needsIdCard ? `
+                        <button class="sb-nav-btn" id="db-nav-upload-id" style="background: #fffbeb; color: #d97706; border: 1px solid #fde68a; animation: trkBadgePulse 2s infinite;">
+                            <i data-feather="upload-cloud"></i> Upload Valid ID Card
+                        </button>` : ''}
+                        
+                        ${canReapply ? `
+                        <button id="reapplyBtnSidebar" class="sb-nav-btn">
+                            <i data-feather="refresh-cw"></i> Reapply Application
+                        </button>` : ''}
 
-                    ${roles.some(r => r.slug === 'super_admin') ? `<button class="sb-nav-btn" id="db-nav-admin"><i data-feather="shield"></i> Admin Panel</button>` : ''}
-                    ${roles.some(r => r.slug === 'supervisor') ? `<button class="sb-nav-btn" id="db-nav-invite"><i data-feather="user-plus"></i> Invite User</button>` : ''}
-                    ${canSetupSsh ? `<button class="sb-nav-btn" id="db-nav-ssh"><i data-feather="lock"></i> SSH Setup</button>` : ''}
-                    <button class="sb-nav-btn" id="db-nav-history"><i data-feather="file-text"></i> History</button>
-                    <button class="sb-nav-btn" id="db-nav-profile"><i data-feather="user"></i> My Profile</button>
+                        ${adminButtonsHtml}
+                        ${canInvite ? `<button class="sb-nav-btn" id="db-nav-invite"><i data-feather="user-plus"></i> Invite User</button>` : ''}
+                        ${canSetupSsh ? `<button class="sb-nav-btn" id="db-nav-ssh"><i data-feather="lock"></i> SSH Setup</button>` : ''}
+                        <button class="sb-nav-btn" id="db-nav-history"><i data-feather="file-text"></i> History</button>
+                        <button class="sb-nav-btn" id="db-nav-profile"><i data-feather="user"></i> My Profile</button>
+                    </div>
                 </div>
+                <div class="sb-footer"><button id="db-logout-btn" class="sb-logout-btn"><i data-feather="log-out"></i> Sign Out</button></div>
             </div>
-            <div class="sb-footer"><button id="db-logout-btn" class="sb-logout-btn"><i data-feather="log-out"></i> Sign Out</button></div>
-        </div>
-    </aside>`;
+        </aside>`;
 }
 
 // ── Application Tracker ───────────────────────────────────────────────────────
@@ -763,13 +849,8 @@ function buildTracker(data, allServices) {
                         </div>
                         <div style="flex-grow: 1;">
                             <div style="font-weight: 800; color: #991b1b; font-size: 1rem; margin-bottom: 0.3rem;">Application Declined</div>
-                            <div style="color: #b91c1c; font-size: 0.85rem; line-height: 1.5; font-weight: 500; margin-bottom: 1rem;">
+                            <div style="color: #b91c1c; font-size: 0.85rem; line-height: 1.5; font-weight: 500; margin-bottom: 0;">
                                 Reason: ${escHtml(appObj.rejection_reason || appObj.declined_reason || 'No specific reason provided.')}
-                            </div>
-                            <div>
-                                <button id="reapplyBtn" class="btn-primary" style="width: auto; padding: 0.6rem 1.5rem; font-weight: 800; font-size: 0.85rem; display: inline-flex; align-items: center; gap: 0.5rem; background: #ef4444; border: none; border-radius: 8px; box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3); cursor: pointer; transition: all 0.2s;">
-                                    <i data-feather="refresh-cw" style="width: 14px; height: 14px;"></i> Reapply Now
-                                </button>
                             </div>
                         </div>
                     </div>
@@ -1194,7 +1275,10 @@ function buildApplicationsTable(apps) {
             <td>
                 <div class="db-applicant-name">${escHtml(a.applicant_name || a.applicant_email || '—')}</div>
                 <div class="db-applicant-email">${escHtml(a.applicant_email || '')}</div>
-                <div style="font-size: 0.75rem; color: #64748b; margin-top: 4px; font-weight: 500;">App ID: ${escHtml(a.application_id || a.id || '—')}</div>
+                <div style="font-size: 0.75rem; color: #64748b; margin-top: 4px; font-weight: 500;">
+                    App ID: ${escHtml(a.application_id || a.id || '—')}
+                    ${a.reapplied_from ? `<span style="margin-left:6px; background:#fffbeb; color:#d97706; padding:2px 6px; border-radius:4px; border:1px solid #fde68a; font-size:0.65rem; font-weight:700;" title="Reapplied from ${escHtml(a.reapplied_from)}"><i data-feather="refresh-ccw" style="width:8px; height:8px; margin-right:2px;"></i>Reapplication</span>` : ''}
+                </div>
             </td>
             <td>${escHtml(a.request_name || '—')}</td>
             <td>${escHtml(a.workflow_name || '—')}</td>
@@ -1762,7 +1846,6 @@ async function _wireInviteUser(container) {
                     <tr style="border-bottom:1px solid #f1f5f9;">
                         <td style="padding:1rem; font-weight:700; color:#0f172a; font-size:0.9rem;">${escHtml(inv.email)}</td>
                         <td style="padding:1rem;"><span style="background:#e0f2fe; color:#0369a1; padding:0.25rem 0.6rem; border-radius:6px; font-weight:700; font-size:0.75rem; border:1px solid #bae6fd;">${escHtml(roleLabel)}</span></td>
-                        <td style="padding:1rem;"><span style="padding:0.25rem 0.6rem; border-radius:99px; font-weight:800; font-size:0.7rem; text-transform:uppercase; ${badgeStyle}">${escHtml(statusLabel)}</span></td>
                         <td style="padding:1rem; font-size:0.8rem; color:#64748b; font-weight:600;">
                             <div style="font-size:0.65rem; color:#94a3b8; text-transform:uppercase; font-weight:700; margin-bottom:0.15rem;">${dateLabel}</div>
                             ${formatDate(dateVal)}
@@ -1779,7 +1862,6 @@ async function _wireInviteUser(container) {
                             <tr style="text-align:left; background:#f8fafc; border-bottom:2px solid #e2e8f0;">
                                 <th style="padding:0.75rem 1rem; color:#64748b; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; font-weight:800;">Invited User</th>
                                 <th style="padding:0.75rem 1rem; color:#64748b; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; font-weight:800;">Designated Role</th>
-                                <th style="padding:0.75rem 1rem; color:#64748b; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; font-weight:800;">Status</th>
                                 <th style="padding:0.75rem 1rem; color:#64748b; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; font-weight:800;">Timeline</th>
                                 <th style="padding:0.75rem 1rem; text-align:right; color:#64748b; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; font-weight:800;">Actions</th>
                             </tr>

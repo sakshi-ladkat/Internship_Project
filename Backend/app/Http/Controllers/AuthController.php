@@ -286,10 +286,22 @@ class AuthController extends Controller
         $contact = \Illuminate\Support\Facades\DB::table('user_contacts')
             ->where('user_id', $userId)->first();
 
+        if ($contact) {
+            $continent = \App\Models\Continent::where('name', $contact->continent_name)->first();
+            $country = \App\Models\Country::where('name', $contact->country_name)->first();
+            $contact->continent_id = $continent ? $continent->id : null;
+            $contact->country_id = $country ? $country->id : null;
+        }
+
         $affiliation = \Illuminate\Support\Facades\DB::table('user_affilation as ua')
             ->leftJoin('institutes as i', 'ua.institute_id', '=', 'i.id')
             ->where('ua.user_id', $userId)
             ->select('ua.*', 'i.name as institute_name', 'i.code as institute_code')
+            ->first();
+            
+        $supervisor = \Illuminate\Support\Facades\DB::table('user_supervisors')
+            ->where('user_id', $userId)
+            ->where('is_active', true)
             ->first();
 
         $application = \Illuminate\Support\Facades\DB::table('applications')
@@ -503,5 +515,30 @@ class AuthController extends Controller
             Log::error('Qualification Add Error: ' . $e->getMessage(), ['user_id' => $userId]);
             return response()->json(['error' => 'Failed to add qualification. Your session might be stale - please try re-logging.'], 500);
         }
+    }
+
+    /**
+     * Get list of permission slugs for the authenticated user.
+     * GET /api/auth/my-permissions [JWT required]
+     */
+    public function getMyPermissions(Request $request): \Illuminate\Http\JsonResponse
+    {
+        $userId = $request->auth_user_id;
+        if (!$userId) {
+            return response()->json(['error' => 'Unauthenticated'], 401);
+        }
+
+        $permissions = \Illuminate\Support\Facades\DB::table('user_roles as ur')
+            ->join('roles as r', 'ur.role_id', '=', 'r.id')
+            ->join('roles_permissions as rp', 'r.id', '=', 'rp.role_id')
+            ->join('permissions as p', 'rp.permission_id', '=', 'p.id')
+            ->where('ur.user_id', $userId)
+            ->where('ur.is_active', true)
+            ->where('rp.is_active', true)
+            ->pluck('p.slug')
+            ->unique()
+            ->values();
+
+        return response()->json($permissions);
     }
 }

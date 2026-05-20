@@ -25,7 +25,6 @@ return new class extends Migration
                   ->onUpdate('cascade')
                   ->onDelete('set null');
             $table->string('role')->nullable();
-            $table->enum('status', ['pending', 'accepted', 'expired', 'cancelled'])->default('pending');
             $table->timestamp('expires_at');
             $table->timestamp('accepted_at')->nullable();
             $table->timestamps();

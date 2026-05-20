@@ -47,6 +47,7 @@ Route::prefix('auth')->group(function () {
     Route::middleware(JwtMiddleware::class)->group(function () {
             Route::post('/logout', [AuthController::class , 'logout']);
             Route::get('/me', [AuthController::class , 'me']);
+            Route::get('/my-permissions', [AuthController::class, 'getMyPermissions']);
             Route::patch('/me', [AuthController::class , 'updateProfile']);
             Route::patch('/profile', [AuthController::class , 'updateFullProfile']);
             Route::post('/qualification', [AuthController::class , 'addQualification']);
@@ -71,6 +72,7 @@ Route::prefix('auth')->group(function () {
             Route::prefix('review')->group(function () {
                 Route::get('/tracker/{id?}',             [WorkflowController::class, 'unifiedTracker']);
                 Route::get('/applications',                [WorkflowController::class, 'index']);
+                Route::get('/applications/{id}/diff',      [WorkflowController::class, 'diff']);
                 Route::get('/my-application',              [WorkflowController::class, 'unifiedTracker']);
                 Route::post('/applications/{id}/decide',   [WorkflowController::class, 'decide']);
                 Route::post('/applications/{id}/approve-id-card', [WorkflowController::class, 'approveIdCard']);

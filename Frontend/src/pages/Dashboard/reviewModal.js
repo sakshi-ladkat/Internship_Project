@@ -123,6 +123,8 @@ function _ensureModal() {
                 </div>
 
                 <div class="rm-form-body">
+                    <!-- Reapplication Diff Banner -->
+                    <div id="rm-reapply-banner" style="display:none; margin-bottom: 1.5rem;"></div>
 
                     <!-- LIGO Member toggle -->
                     <div class="rm-field-group" id="rm-ligo-group">
@@ -345,6 +347,41 @@ function _ensureModal() {
                     </div>
                 </div>
             </div>
+        </div>
+
+        <!-- Reapplication Comparison Overlay -->
+        <div id="rm-reapply-diff-overlay" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(15,23,42,0.7); backdrop-filter:blur(4px); overflow-y:auto;">
+            <div style="max-width:1100px; margin:2rem auto; padding:1rem;">
+                <div style="background:white; border-radius:1rem; box-shadow:0 25px 60px rgba(0,0,0,0.25); overflow:hidden;">
+                    <!-- Header -->
+                    <div style="display:flex; justify-content:space-between; align-items:center; padding:1.25rem 1.5rem; background:linear-gradient(135deg,#059669,#10b981); color:white;">
+                        <div style="display:flex; align-items:center; gap:0.75rem;">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                            <span style="font-weight:800; font-size:1rem;">Application Comparison — Reapplication History</span>
+                        </div>
+                        <button id="rm-reapply-diff-close" style="background:rgba(255,255,255,0.2); border:none; color:white; width:32px; height:32px; border-radius:50%; font-size:1.1rem; cursor:pointer; display:flex; align-items:center; justify-content:center;">✕</button>
+                    </div>
+                    <!-- Body -->
+                    <div style="padding:1.5rem; overflow-x:auto;">
+                        <table style="width:100%; border-collapse:collapse; font-size:0.9rem;">
+                            <thead>
+                                <tr style="border-bottom:2px solid #e2e8f0;">
+                                    <th style="padding:0.75rem; text-align:left; color:#64748b; font-weight:700; width:30%;">Field</th>
+                                    <th style="padding:0.75rem; text-align:left; color:#0f172a; font-weight:800; width:35%;">Current Application (<span id="rm-diff-curr-id"></span>)</th>
+                                    <th style="padding:0.75rem; text-align:left; color:#64748b; font-weight:800; width:35%;">Previous Application (<span id="rm-diff-prev-id"></span>)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="rm-reapply-diff-tbody">
+                                <!-- Dynamic side-by-side rows go here -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <!-- Footer actions -->
+                    <div style="display:flex; justify-content:flex-end; gap:0.75rem; padding:1rem 1.5rem; border-top:1px solid #f1f5f9; background:#f8fafc;">
+                        <button id="rm-reapply-diff-close-bottom" style="background:white; border:1px solid #e2e8f0; color:#64748b; padding:0.5rem 1.25rem; border-radius:0.5rem; font-weight:600; cursor:pointer;">Close Comparison</button>
+                    </div>
+                </div>
+            </div>
         </div>`;
 
     document.body.appendChild(_modal);
@@ -361,6 +398,12 @@ function _ensureModal() {
     const compareOverlay = _modal.querySelector('#rm-compare-overlay');
     _modal.querySelector('#rm-compare-close').addEventListener('click', () => compareOverlay.style.display = 'none');
     _modal.querySelector('#rm-compare-close-bottom').addEventListener('click', () => compareOverlay.style.display = 'none');
+
+    // Wire reapply diff overlay close buttons
+    const reapplyDiffOverlay = _modal.querySelector('#rm-reapply-diff-overlay');
+    _modal.querySelector('#rm-reapply-diff-close').addEventListener('click', () => reapplyDiffOverlay.style.display = 'none');
+    _modal.querySelector('#rm-reapply-diff-close-bottom').addEventListener('click', () => reapplyDiffOverlay.style.display = 'none');
+
     _modal.querySelector('#rm-compare-sendback').addEventListener('click', () => {
         compareOverlay.style.display = 'none';
         _showDecisionPanel('correction');
@@ -377,6 +420,7 @@ function _ensureModal() {
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
             if (compareOverlay.style.display !== 'none') { compareOverlay.style.display = 'none'; return; }
+            if (reapplyDiffOverlay.style.display !== 'none') { reapplyDiffOverlay.style.display = 'none'; return; }
             if (idPreview.classList.contains('open')) idPreview.classList.remove('open');
             else _close();
         }
@@ -656,8 +700,13 @@ async function _loadModalData(app) {
         }
     }
 
-    _modal.querySelector('#rm-subtitle').textContent =
-        `${app.applicant_name || app.applicant_email} · ${app.current_status || app.workflow_name}`;
+    let titleHtml = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg> Review Application`;
+    if (app.reapplied_from) {
+        titleHtml += ` <span style="margin-left:8px; background:#fffbeb; color:#d97706; padding:2px 8px; border-radius:12px; font-size:0.8rem; border:1px solid #fde68a; font-weight:700;" title="Reapplied from original application ${app.reapplied_from}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:middle; margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>Reapplication (${app.reapplied_from})</span>`;
+    }
+    _modal.querySelector('#rm-title').innerHTML = titleHtml;
+
+    _modal.querySelector('#rm-subtitle').innerHTML = `${app.applicant_name || app.applicant_email} &middot; ${app.current_status || app.workflow_name}`;
 
     // Load necessary data
     const loaders = [_loadApplicantProfile(app.applicant_email)];
@@ -736,6 +785,56 @@ async function _loadModalData(app) {
         `;
         subGrp.style.display = 'block';
         sysGrp.style.display = 'block';
+    }
+
+    // Reapplication Diff Banner Setup
+    const reapplyBanner = _modal.querySelector('#rm-reapply-banner');
+    if (app.reapplied_from) {
+        reapplyBanner.innerHTML = `
+            <div style="background: #f0fdf4; border: 1px solid #86efac; padding: 1rem; border-radius: 0.75rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); margin-bottom: 1.5rem;">
+                <div style="display: flex; align-items: center; gap: 0.75rem;">
+                    <div style="background: #10b981; color: white; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 2px 4px rgba(16,185,129,0.2);">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                    </div>
+                    <div>
+                        <div style="font-weight: 800; color: #166534; font-size: 0.85rem;">Reapplied Application</div>
+                        <div style="color: #15803d; font-size: 0.78rem; font-weight: 500;">Compare differences with the previous submission.</div>
+                    </div>
+                </div>
+                <button id="rm-view-diff-btn" class="btn" style="background: #10b981; color: white; border: none; font-size: 0.78rem; padding: 6px 14px; border-radius: 6px; font-weight: 700; cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 4px rgba(16,185,129,0.2); display: flex; align-items: center; gap: 4px;">
+                    🔍 Compare Apps
+                </button>
+            </div>
+        `;
+        reapplyBanner.style.display = 'block';
+
+        const viewDiffBtn = reapplyBanner.querySelector('#rm-view-diff-btn');
+        viewDiffBtn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const originalText = viewDiffBtn.innerHTML;
+            viewDiffBtn.disabled = true;
+            viewDiffBtn.innerHTML = `Loading...`;
+            
+            try {
+                const res = await authFetch(API.APPLICATION_DIFF(app.id));
+                if (!res.ok) throw new Error('Failed to load comparison data');
+                const data = await res.json();
+                if (data.has_comparison) {
+                    _showReapplyDiffOverlay(data.current, data.previous);
+                } else {
+                    alert('No previous application data found to compare.');
+                }
+            } catch (err) {
+                console.error(err);
+                alert('Error loading comparison data: ' + err.message);
+            } finally {
+                viewDiffBtn.disabled = false;
+                viewDiffBtn.innerHTML = originalText;
+            }
+        });
+    } else {
+        reapplyBanner.style.display = 'none';
+        reapplyBanner.innerHTML = '';
     }
 }
 
@@ -884,7 +983,7 @@ function _renderPastRecommendations(app, services) {
 
         let headerText = 'Approved';
         if (r.action === 'Returned for Correction') headerText = 'Correction needed';
-        else if (r.action === 'Final Rejection' || r.action === 'Rejected') headerText = 'Declined';
+        else if (r.action === 'Final Rejection' || r.action === 'Rejected' || r.action === 'Declined' || r.action === 'decline' || r.action === 'final_rejection') headerText = 'Declined';
         else if (r.action?.includes('identity')) headerText = 'Identity Verified';
 
         const isIdentityVerified = headerText === 'Identity Verified';
@@ -918,7 +1017,7 @@ function _renderPastRecommendations(app, services) {
             return; // Skip rendering the complex expandable card for identity approvals
         }
 
-        const isSimpleLog = r.action === 'Returned for Correction' || r.action === 'Final Rejection' || r.action === 'Rejected';
+        const isSimpleLog = r.action === 'Returned for Correction' || r.action === 'Final Rejection' || r.action === 'Rejected' || r.action === 'Declined' || r.action === 'decline' || r.action === 'final_rejection';
 
         html += `
             <details class="rm-past-item" ${isOpen} style="background: white; border: 1px solid #e2e8f0; border-radius: 0.75rem; margin-bottom: 1rem; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); transition: all 0.3s ease;">
@@ -1134,6 +1233,61 @@ async function _openCompareOverlay(currentUserId, matches) {
     overlay.querySelector('#rm-compare-next').addEventListener('click', () => { if (currentIdx < matches.length - 1) _render(currentIdx + 1); });
 
     if (window.feather) feather.replace();
+}
+
+function _showReapplyDiffOverlay(current, previous) {
+    const overlay = _modal.querySelector('#rm-reapply-diff-overlay');
+    const tbody = overlay.querySelector('#rm-reapply-diff-tbody');
+
+    overlay.querySelector('#rm-diff-curr-id').textContent = current.application_id;
+    overlay.querySelector('#rm-diff-prev-id').textContent = previous.application_id;
+
+    const _cmp = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+    const _row = (label, valA, valB) => {
+        const same = _cmp(valA, valB);
+        return `
+        <tr style="${same ? '' : 'background:#fffbeb;'} border-bottom:1px solid #f1f5f9; transition: background 0.15s;">
+            <td style="padding:0.75rem; font-size:0.85rem; color:#64748b; font-weight:700; vertical-align:top;">${escHtml(label)}</td>
+            <td style="padding:0.75rem; font-size:0.9rem; color:#0f172a; font-weight:${same ? '400' : '800'}; word-break:break-word; vertical-align:top;">${escHtml(String(valA || '—'))}</td>
+            <td style="padding:0.75rem; font-size:0.9rem; color:#475569; font-weight:400; word-break:break-word; vertical-align:top;">${escHtml(String(valB || '—'))}</td>
+        </tr>`;
+    };
+
+    const _rowIdCard = (label, valA, valB, pathA, pathB) => {
+        const same = _cmp(valA, valB);
+        const linkA = pathA ? `<a href="/api/auth/files/view?path=${encodeURIComponent(pathA)}" target="_blank" style="color:#2563eb; text-decoration:underline; font-weight:700;">${escHtml(valA)}</a>` : '—';
+        const linkB = pathB ? `<a href="/api/auth/files/view?path=${encodeURIComponent(pathB)}" target="_blank" style="color:#2563eb; text-decoration:underline; font-weight:700;">${escHtml(valB)}</a>` : '—';
+        return `
+        <tr style="${same ? '' : 'background:#fffbeb;'} border-bottom:1px solid #f1f5f9; transition: background 0.15s;">
+            <td style="padding:0.75rem; font-size:0.85rem; color:#64748b; font-weight:700; vertical-align:top;">${escHtml(label)}</td>
+            <td style="padding:0.75rem; font-size:0.9rem; color:#0f172a; vertical-align:top;">${linkA}</td>
+            <td style="padding:0.75rem; font-size:0.9rem; color:#475569; vertical-align:top;">${linkB}</td>
+        </tr>`;
+    };
+
+    let html = '';
+    // Personal Details
+    html += _row('Applicant Name', current.name, previous.name);
+    html += _row('Designation / Category', current.designation, previous.designation);
+    html += _row('Institute', current.institute, previous.institute);
+    html += _row('Highest Qualification', current.qualification, previous.qualification);
+    html += _row('Country', current.country, previous.country);
+    html += _row('Phone Number', current.phone, previous.phone);
+
+    // Application Details
+    html += _row('Supervisor', current.supervisor, previous.supervisor);
+    html += _row('LIGO Member', current.ligo_member, previous.ligo_member);
+    html += _row('Requested Duration', current.duration, previous.duration);
+    html += _row('Assigned System', current.system, previous.system);
+    html += _row('Assigned Subsystem', current.subsystem, previous.subsystem);
+    html += _row('Recommended Services', current.services, previous.services);
+    html += _row('Recommended Subservices', current.subservices, previous.subservices);
+
+    // Documents
+    html += _rowIdCard('Identity Card / Proof', current.id_card_filename, previous.id_card_filename, current.id_card_path, previous.id_card_path);
+
+    tbody.innerHTML = html;
+    overlay.style.display = 'block';
 }
 
 async function _triggerIdPreview(userId) {
